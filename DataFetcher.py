@@ -16,16 +16,23 @@ class DataFetcher:
         :param days: Número de días de historia a recuperar.
         :return: DataFrame con los datos obtenidos.
         """
-        fecha_actual = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        fecha_inicio = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d')
-        
-        url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/{range}/{timeframe}/{fecha_inicio}/{fecha_actual}"
+        fecha_actual = datetime.now(timezone.utc)
+        fecha_inicio = fecha_actual - timedelta(days=days)
+
+        # Verificación de fechas
+        print(f"Fecha de inicio: {fecha_inicio.strftime('%Y-%m-%d')}")
+        print(f"Fecha actual: {fecha_actual.strftime('%Y-%m-%d')}")
+
+        url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/{range}/{timeframe}/{fecha_inicio.strftime('%Y-%m-%d')}/{fecha_actual.strftime('%Y-%m-%d')}"
         params = {
             "adjusted": "true",
             "sort": "desc",
             "apiKey": self.api_key_polygon
         }
-        
+
+        # Verificación de URL
+        print(f"URL solicitada: {url}")
+
         response = requests.get(url, params=params)
         if response.status_code != 200:
             raise ValueError(f"Error al obtener datos de la API para {symbol}: {response.status_code}")
@@ -38,7 +45,12 @@ class DataFetcher:
             df.rename(columns={'o': 'Open', 'h': 'High', 'l': 'Low', 'c': 'Close', 'v': 'Volume'}, inplace=True)
 
             # Filtrar los datos recientes en función de los días solicitados
-            df_recientes = df[df.index >= (datetime.now(timezone.utc) - timedelta(days=days))]
+            df_recientes = df[df.index >= fecha_inicio]
+
+            # Verificar si los datos obtenidos son los más recientes
+            timestamp_reciente = df_recientes.index.max()
+            if timestamp_reciente is None or fecha_actual - timestamp_reciente > timedelta(hours=1):
+                raise ValueError(f"Los datos obtenidos para {symbol} no son los más recientes. Última fecha: {timestamp_reciente}")
             
             return df_recientes[['Open', 'High', 'Low', 'Close', 'Volume']]
         else:

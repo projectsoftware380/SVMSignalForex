@@ -23,7 +23,6 @@ class ForexAnalyzer:
         kijun_sen = (self.calcular_sma(df['High'], length=26) + self.calcular_sma(df['Low'], length=26)) / 2
         senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(26)
         
-        # Verifica que haya suficientes datos para calcular senkou_span_b
         senkou_span_b_high = self.calcular_sma(df['High'], length=52)
         senkou_span_b_low = self.calcular_sma(df['Low'], length=52)
         
@@ -71,9 +70,7 @@ class ForexAnalyzer:
     def analizar_par(self, pair):
         try:
             symbol_polygon = pair.replace("-", "")
-            df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=60)  # Cambiado a 60 días para asegurar datos suficientes
-            print(f"Datos obtenidos para {pair}:")
-            print(df.tail())  # Verificar los datos más recientes
+            df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=60)
 
             tendencia = self.determinar_tendencia(df)
             sentimiento = self.obtener_sentimiento(pair)
@@ -100,22 +97,4 @@ if __name__ == "__main__":
     
     for pair in pairs:
         resultado = analyzer.analizar_par(pair)
-        print(resultado)
-
-    # Prueba adicional para ver los valores de los indicadores
-    pair = "EUR-USD"
-    symbol_polygon = pair.replace("-", "")
-    df = data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=60)  # Usar 60 días para asegurar datos suficientes
-
-    tenkan_sen = (analyzer.calcular_sma(df['High'], length=9) + analyzer.calcular_sma(df['Low'], length=9)) / 2
-    kijun_sen = (analyzer.calcular_sma(df['High'], length=26) + analyzer.calcular_sma(df['Low'], length=26)) / 2
-    senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(26)
-    senkou_span_b = (analyzer.calcular_sma(df['High'], length=52) + analyzer.calcular_sma(df['Low'], length=52)) / 2
-    senkou_span_b = senkou_span_b.shift(26)
-
-    print("Valores de los indicadores:")
-    print(f"Tenkan-sen:\n{tenkan_sen.tail()}")
-    print(f"Kijun-sen:\n{kijun_sen.tail()}")
-    print(f"Senkou Span A:\n{senkou_span_a.tail()}")
-    print(f"Senkou Span B:\n{senkou_span_b.tail()}")
-
+        print(resultado)  # Solo imprime el resultado final para cada par de divisas

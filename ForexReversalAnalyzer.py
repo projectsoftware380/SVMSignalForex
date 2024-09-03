@@ -1,21 +1,25 @@
 import pandas as pd
 import pandas_ta as ta
 from datetime import datetime, timezone
-from DataFetcher import DataFetcher  # Asegúrate de que data_fetcher.py esté en la misma carpeta
+from DataFetcher import DataFetcher
 
 class ForexReversalAnalyzer:
     def __init__(self, data_fetcher):
         self.data_fetcher = data_fetcher
 
     def obtener_datos_bollinger(self, symbol):
-        # Obtener la fecha actual en UTC
-        fecha_actual = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        
-        # Solicitar los datos más recientes, 5 días hacia atrás desde la fecha actual
+        """
+        Solicita los datos más recientes para calcular las Bandas de Bollinger.
+        Se obtienen datos de los últimos 5 días con velas de 15 minutos.
+        """
+        # Solicitar los datos más recientes, 5 días hacia atrás
         df = self.data_fetcher.obtener_datos(symbol=symbol, timeframe='minute', range='15', days=5)
         return df
 
     def detectar_reversion(self, df, tendencia, symbol_polygon):
+        """
+        Detecta una posible reversión basada en las Bandas de Bollinger y la tendencia actual.
+        """
         # Aplicar las Bandas de Bollinger
         bollinger = ta.bbands(df['Close'], length=20, std=2)
         df['mid'] = bollinger['BBM_20_2.0']  # Línea central
@@ -31,6 +35,9 @@ class ForexReversalAnalyzer:
             return "No hay Reversión"
 
     def analizar_reversiones(self, pares_tendencia):
+        """
+        Analiza los pares de divisas en tendencia para detectar posibles reversiones.
+        """
         resultados = {}
         
         # Verificar que el diccionario de tendencias esté actualizado
@@ -40,7 +47,7 @@ class ForexReversalAnalyzer:
         for pair, tendencia in pares_tendencia.items():
             if tendencia != "Neutral":
                 try:
-                    # Solo pasar "Tendencia Alcista" o "Tendencia Bajista" a la función detectar_reversion
+                    # Determinar la tendencia simplificada
                     if "Tendencia Alcista" in tendencia:
                         tendencia_simple = "Tendencia Alcista"
                     elif "Tendencia Bajista" in tendencia:
