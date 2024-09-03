@@ -1,15 +1,15 @@
 import requests
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 class DataFetcher:
     def __init__(self, api_key_polygon):
         self.api_key_polygon = api_key_polygon
 
     def obtener_datos(self, symbol, timeframe='hour', range='1', days=10):
-        # Obtener fechas para la solicitud
-        fecha_actual = datetime.utcnow().strftime('%Y-%m-%d')
-        fecha_inicio = (datetime.utcnow() - timedelta(days=days)).strftime('%Y-%m-%d')
+        # Obtener fechas para la solicitud usando datetime.now con timezone.utc
+        fecha_actual = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        fecha_inicio = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d')
         
         # Construir la URL de la API
         url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/{range}/{timeframe}/{fecha_inicio}/{fecha_actual}"
@@ -49,3 +49,4 @@ if __name__ == "__main__":
         print(df)  # Muestra el DataFrame completo para inspección
     except Exception as e:
         print(f"Error al obtener datos: {e}")
+
