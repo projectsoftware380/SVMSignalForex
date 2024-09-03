@@ -2,6 +2,8 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
+from .DataFetcher import DataFetcher
+
 class DataFetcher:
     def __init__(self, api_key_polygon):
         self.api_key_polygon = api_key_polygon

@@ -3,6 +3,9 @@ import pandas as pd
 import pandas_ta as ta
 from datetime import datetime, timedelta
 
+from DataFetcher import DataFetcher
+
+
 class ForexAnalyzer:
     def __init__(self, data_fetcher, api_token_forexnews):
         self.data_fetcher = data_fetcher
@@ -90,3 +93,37 @@ if __name__ == "__main__":
     for pair in pairs:
         resultado = analyzer.analizar_par(pair)
         print(resultado)
+
+if __name__ == "__main__":
+    api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"
+    api_token_forexnews = "25wpwpebrawmafmvjuagciubjoylthzaybzvbtqk"
+    
+    # Instancia de DataFetcher
+    data_fetcher = DataFetcher(api_key_polygon)
+    
+    analyzer = ForexAnalyzer(data_fetcher, api_token_forexnews)
+    
+    # Escoger un par para la prueba
+    pair = "EUR-USD"
+    
+    # Obtener el análisis para este par
+    resultado = analyzer.analizar_par(pair)
+    print(f"Resultado del análisis para {pair}: {resultado}")
+    
+    # Adicionalmente, si deseas ver los indicadores calculados:
+    symbol_polygon = pair.replace("-", "")
+    df = data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=10)
+    
+    # Calcular SMA y otros indicadores directamente
+    tenkan_sen = (analyzer.calcular_sma(df['High'], length=9) + analyzer.calcular_sma(df['Low'], length=9)) / 2
+    kijun_sen = (analyzer.calcular_sma(df['High'], length=26) + analyzer.calcular_sma(df['Low'], length=26)) / 2
+    senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(26)
+    senkou_span_b = (analyzer.calcular_sma(df['High'], length=52) + analyzer.calcular_sma(df['Low'], length=52)) / 2
+    senkou_span_b = senkou_span_b.shift(26)
+    
+    # Mostrar los primeros valores calculados
+    print("Valores de los indicadores:")
+    print(f"Tenkan-sen:\n{tenkan_sen.tail()}")
+    print(f"Kijun-sen:\n{kijun_sen.tail()}")
+    print(f"Senkou Span A:\n{senkou_span_a.tail()}")
+    print(f"Senkou Span B:\n{senkou_span_b.tail()}")
