@@ -34,6 +34,7 @@ class DataFetcher:
             print(df.head())  # Mostrar los primeros registros para validación
             return df[['Open', 'High', 'Low', 'Close', 'Volume']]
         else:
+            raise ValueError(f"No se pudieron obtener datos de la API para {symbol}.")
 
 if __name__ == "__main__":
     # Instancia de DataFetcher con tu API key
