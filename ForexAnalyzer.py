@@ -22,7 +22,15 @@ class ForexAnalyzer:
         tenkan_sen = (self.calcular_sma(df['High'], length=9) + self.calcular_sma(df['Low'], length=9)) / 2
         kijun_sen = (self.calcular_sma(df['High'], length=26) + self.calcular_sma(df['Low'], length=26)) / 2
         senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(26)
-        senkou_span_b = (self.calcular_sma(df['High'], length=52) + self.calcular_sma(df['Low'], length=52)) / 2
+        
+        # Verifica que haya suficientes datos para calcular senkou_span_b
+        senkou_span_b_high = self.calcular_sma(df['High'], length=52)
+        senkou_span_b_low = self.calcular_sma(df['Low'], length=52)
+        
+        if senkou_span_b_high is None or senkou_span_b_low is None:
+            return "Datos insuficientes para calcular la tendencia"
+        
+        senkou_span_b = (senkou_span_b_high + senkou_span_b_low) / 2
         senkou_span_b = senkou_span_b.shift(26)
 
         if df['Close'].iloc[-1] > senkou_span_a.iloc[-1] and df['Close'].iloc[-1] > senkou_span_b.iloc[-1]:
@@ -63,7 +71,7 @@ class ForexAnalyzer:
     def analizar_par(self, pair):
         try:
             symbol_polygon = pair.replace("-", "")
-            df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=1)  # Cambiado a 1 día para asegurar datos recientes
+            df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=60)  # Cambiado a 60 días para asegurar datos suficientes
             print(f"Datos obtenidos para {pair}:")
             print(df.tail())  # Verificar los datos más recientes
 
@@ -97,7 +105,7 @@ if __name__ == "__main__":
     # Prueba adicional para ver los valores de los indicadores
     pair = "EUR-USD"
     symbol_polygon = pair.replace("-", "")
-    df = data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=1)  # Usar 1 día para datos recientes
+    df = data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=60)  # Usar 60 días para asegurar datos suficientes
 
     tenkan_sen = (analyzer.calcular_sma(df['High'], length=9) + analyzer.calcular_sma(df['Low'], length=9)) / 2
     kijun_sen = (analyzer.calcular_sma(df['High'], length=26) + analyzer.calcular_sma(df['Low'], length=26)) / 2
@@ -110,5 +118,4 @@ if __name__ == "__main__":
     print(f"Kijun-sen:\n{kijun_sen.tail()}")
     print(f"Senkou Span A:\n{senkou_span_a.tail()}")
     print(f"Senkou Span B:\n{senkou_span_b.tail()}")
-
 

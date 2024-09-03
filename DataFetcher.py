@@ -15,7 +15,7 @@ class DataFetcher:
         url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/{range}/{timeframe}/{fecha_inicio}/{fecha_actual}"
         params = {
             "adjusted": "true",
-            "sort": "asc",
+            "sort": "desc",
             "apiKey": self.api_key_polygon
         }
         
