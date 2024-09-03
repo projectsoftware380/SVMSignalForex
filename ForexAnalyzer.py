@@ -4,33 +4,9 @@ import pandas_ta as ta
 from datetime import datetime, timedelta
 
 class ForexAnalyzer:
-    def __init__(self, api_key_polygon, api_token_forexnews):
-        self.api_key_polygon = api_key_polygon
+    def __init__(self, data_fetcher, api_token_forexnews):
+        self.data_fetcher = data_fetcher
         self.api_token_forexnews = api_token_forexnews
-
-    def obtener_datos_forex(self, symbol):
-        # Obtener la fecha actual y la fecha 10 días antes en UTC
-        fecha_actual = datetime.utcnow().strftime('%Y-%m-%d')
-        fecha_inicio = (datetime.utcnow() - timedelta(days=10)).strftime('%Y-%m-%d')
-        
-        # URL con el rango de fechas ajustado
-        url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/1/hour/{fecha_inicio}/{fecha_actual}"
-        params = {
-            "adjusted": "true",
-            "sort": "asc",
-            "apiKey": self.api_key_polygon
-        }
-        response = requests.get(url, params=params)
-        data = response.json()
-
-        if 'results' in data:
-            df = pd.DataFrame(data['results'])
-            df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
-            df.set_index('timestamp', inplace=True)
-            df.rename(columns={'o': 'Open', 'h': 'High', 'l': 'Low', 'c': 'Close', 'v': 'Volume'}, inplace=True)
-            return df[['Open', 'High', 'Low', 'Close', 'Volume']]
-        else:
-            raise ValueError(f"No se pudieron obtener datos de la API para {symbol}.")
 
     def calcular_sma(self, series, length):
         if len(series) < length:
@@ -86,13 +62,13 @@ class ForexAnalyzer:
         try:
             # Usa el símbolo con el formato correcto (con guion) para ambas consultas
             symbol_polygon = pair.replace("-", "")
-            df = self.obtener_datos_forex(symbol_polygon)
+            df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=10)
             tendencia = self.determinar_tendencia(df)
             sentimiento = self.obtener_sentimiento(pair)  # Usa el formato correcto con guion
 
-            if tendencia == "Tendencia Alcista" and sentimiento == "Sentimiento Alcista":
+            if tendencia == "Tendencia Alcista" y sentimiento == "Sentimiento Alcista":
                 return f"{symbol_polygon} Tendencia Alcista"
-            elif tendencia == "Tendencia Bajista" and sentimiento == "Sentimiento Bajista":
+            elif tendencia == "Tendencia Bajista" y sentimiento == "Sentimiento Bajista":
                 return f"{symbol_polygon} Tendencia Bajista"
             else:
                 return f"{symbol_polygon} Neutral"
@@ -104,7 +80,10 @@ if __name__ == "__main__":
     api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"
     api_token_forexnews = "25wpwpebrawmafmvjuagciubjoylthzaybzvbtqk"
     
-    analyzer = ForexAnalyzer(api_key_polygon, api_token_forexnews)
+    # Instancia de DataFetcher
+    data_fetcher = DataFetcher(api_key_polygon)
+    
+    analyzer = ForexAnalyzer(data_fetcher, api_token_forexnews)
     
     pairs = ["GBP-USD", "USD-CHF", "USD-JPY", "GBP-CAD", "USD-CAD"]
     
