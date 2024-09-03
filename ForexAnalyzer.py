@@ -63,7 +63,10 @@ class ForexAnalyzer:
     def analizar_par(self, pair):
         try:
             symbol_polygon = pair.replace("-", "")
-            df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=10)
+            df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=1)  # Cambiado a 1 día para asegurar datos recientes
+            print(f"Datos obtenidos para {pair}:")
+            print(df.tail())  # Verificar los datos más recientes
+
             tendencia = self.determinar_tendencia(df)
             sentimiento = self.obtener_sentimiento(pair)
 
@@ -94,7 +97,7 @@ if __name__ == "__main__":
     # Prueba adicional para ver los valores de los indicadores
     pair = "EUR-USD"
     symbol_polygon = pair.replace("-", "")
-    df = data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=10)
+    df = data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=1)  # Usar 1 día para datos recientes
 
     tenkan_sen = (analyzer.calcular_sma(df['High'], length=9) + analyzer.calcular_sma(df['Low'], length=9)) / 2
     kijun_sen = (analyzer.calcular_sma(df['High'], length=26) + analyzer.calcular_sma(df['Low'], length=26)) / 2
@@ -107,4 +110,5 @@ if __name__ == "__main__":
     print(f"Kijun-sen:\n{kijun_sen.tail()}")
     print(f"Senkou Span A:\n{senkou_span_a.tail()}")
     print(f"Senkou Span B:\n{senkou_span_b.tail()}")
+
 
