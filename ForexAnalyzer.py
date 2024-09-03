@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 
 from DataFetcher import DataFetcher
 
-
 class ForexAnalyzer:
     def __init__(self, data_fetcher, api_token_forexnews):
         self.data_fetcher = data_fetcher
@@ -63,15 +62,14 @@ class ForexAnalyzer:
 
     def analizar_par(self, pair):
         try:
-            # Usa el símbolo con el formato correcto (con guion) para ambas consultas
             symbol_polygon = pair.replace("-", "")
             df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=10)
             tendencia = self.determinar_tendencia(df)
-            sentimiento = self.obtener_sentimiento(pair)  # Usa el formato correcto con guion
+            sentimiento = self.obtener_sentimiento(pair)
 
-            if tendencia == "Tendencia Alcista" y sentimiento == "Sentimiento Alcista":
+            if tendencia == "Tendencia Alcista" and sentimiento == "Sentimiento Alcista":
                 return f"{symbol_polygon} Tendencia Alcista"
-            elif tendencia == "Tendencia Bajista" y sentimiento == "Sentimiento Bajista":
+            elif tendencia == "Tendencia Bajista" and sentimiento == "Sentimiento Bajista":
                 return f"{symbol_polygon} Tendencia Bajista"
             else:
                 return f"{symbol_polygon} Neutral"
@@ -83,7 +81,6 @@ if __name__ == "__main__":
     api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"
     api_token_forexnews = "25wpwpebrawmafmvjuagciubjoylthzaybzvbtqk"
     
-    # Instancia de DataFetcher
     data_fetcher = DataFetcher(api_key_polygon)
     
     analyzer = ForexAnalyzer(data_fetcher, api_token_forexnews)
@@ -94,36 +91,20 @@ if __name__ == "__main__":
         resultado = analyzer.analizar_par(pair)
         print(resultado)
 
-if __name__ == "__main__":
-    api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"
-    api_token_forexnews = "25wpwpebrawmafmvjuagciubjoylthzaybzvbtqk"
-    
-    # Instancia de DataFetcher
-    data_fetcher = DataFetcher(api_key_polygon)
-    
-    analyzer = ForexAnalyzer(data_fetcher, api_token_forexnews)
-    
-    # Escoger un par para la prueba
+    # Prueba adicional para ver los valores de los indicadores
     pair = "EUR-USD"
-    
-    # Obtener el análisis para este par
-    resultado = analyzer.analizar_par(pair)
-    print(f"Resultado del análisis para {pair}: {resultado}")
-    
-    # Adicionalmente, si deseas ver los indicadores calculados:
     symbol_polygon = pair.replace("-", "")
     df = data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=10)
-    
-    # Calcular SMA y otros indicadores directamente
+
     tenkan_sen = (analyzer.calcular_sma(df['High'], length=9) + analyzer.calcular_sma(df['Low'], length=9)) / 2
     kijun_sen = (analyzer.calcular_sma(df['High'], length=26) + analyzer.calcular_sma(df['Low'], length=26)) / 2
     senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(26)
     senkou_span_b = (analyzer.calcular_sma(df['High'], length=52) + analyzer.calcular_sma(df['Low'], length=52)) / 2
     senkou_span_b = senkou_span_b.shift(26)
-    
-    # Mostrar los primeros valores calculados
+
     print("Valores de los indicadores:")
     print(f"Tenkan-sen:\n{tenkan_sen.tail()}")
     print(f"Kijun-sen:\n{kijun_sen.tail()}")
     print(f"Senkou Span A:\n{senkou_span_a.tail()}")
     print(f"Senkou Span B:\n{senkou_span_b.tail()}")
+
