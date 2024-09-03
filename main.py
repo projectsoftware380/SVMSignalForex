@@ -37,8 +37,9 @@ def operar_pares():
         
         # 2. Monitorear reversiones solo en pares con tendencia clara (cada 15 minutos)
         pares_reversion = forex_reversal_analyzer.analizar_reversiones(pares_tendencia)
-        for pair, resultado_reversion in pares_reversion.items():
-            print(f"Reversión para {pair}: {resultado_reversion}")
+        # Eliminamos la impresión de las reversiones detectadas
+        # for pair, resultado_reversion in pares_reversion.items():
+        #     print(f"Reversión para {pair}: {resultado_reversion}")
         
         # 3. Generar señales solo en pares con reversión detectada (cada 3 minutos)
         for pair, reversion in pares_reversion.items():
@@ -74,3 +75,4 @@ while True:
 
 # Cerrar conexión a MetaTrader 5 al terminar
 mt5_executor.cerrar_conexion()
+

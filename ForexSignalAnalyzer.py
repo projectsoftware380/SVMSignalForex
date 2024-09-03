@@ -1,6 +1,5 @@
 import pandas as pd
 import pandas_ta as ta
-from datetime import datetime, timedelta
 from DataFetcher import DataFetcher
 
 class ForexSignalAnalyzer:
@@ -28,7 +27,8 @@ class ForexSignalAnalyzer:
         """
         # Calcular RSI de 2 períodos
         rsi = ta.rsi(df['Close'], length=2)
-        rsi_actual = rsi.iloc[-1]
+        rsi_actual = rsi.iloc[-1]  # Valor del RSI actual
+        precio_cierre = df['Close'].iloc[-1]  # Obtener el precio de cierre más reciente
 
         if reverso_tendencia == "Reversión Alcista Detectada":
             if rsi_actual < 20:
@@ -55,12 +55,8 @@ class ForexSignalAnalyzer:
             print("El diccionario de pares en reversión está vacío o no es válido.")
             return resultados
         
-        print("Diccionario de pares en reversión recibido:")
-        print(pares_reversiones)
-        
         for pair, reverso_tendencia in pares_reversiones.items():
             if reverso_tendencia not in ["Reversión Alcista Detectada", "Reversión Bajista Detectada"]:
-                print(f"{pair}: Reverso tendencia inválido o neutral, no se analiza señal.")
                 resultados[pair] = "Neutral - No se analiza señal"
             else:
                 try:
@@ -68,9 +64,13 @@ class ForexSignalAnalyzer:
                     df = self.obtener_datos_rsi(symbol_polygon)
                     resultado_senal = self.generar_senal_trading(df, reverso_tendencia, symbol_polygon)
                     resultados[pair] = resultado_senal
-                    print(f"{pair}: {resultado_senal}")
                 except ValueError as e:
                     resultados[pair] = f"Error en el análisis - {str(e)}"
+
+        # Imprimir solo los resultados de las señales generadas
+        for pair, resultado in resultados.items():
+            print(f"{pair}: {resultado}")
+
         return resultados
 
 # Ejemplo de uso
@@ -94,6 +94,3 @@ if __name__ == "__main__":
     
     # Analizar señales de trading
     resultados_senales = signal_analyzer.analizar_senales(pares_reversiones)
-    
-    for pair, resultado in resultados_senales.items():
-        print(f"{pair}: {resultado}")

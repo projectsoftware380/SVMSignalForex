@@ -28,17 +28,13 @@ class ForexReversalAnalyzer:
         elif tendencia == "Tendencia Bajista" and precio_actual > linea_central:
             return "Reversión Bajista Detectada"
         else:
-            return "No hay Reversión"
+            return None  # Cambiado para devolver None si no hay reversión
 
     def analizar_reversiones(self, pares_tendencia):
         """
         Analiza los pares de divisas en tendencia para detectar posibles reversiones.
         """
-        # Imprimir el diccionario que recibe
-        print("Diccionario de pares en tendencia recibido:")
-        print(pares_tendencia)
-
-        resultados = {}
+        resultados = {}  # Inicializamos el diccionario de resultados
 
         for pair, tendencia in pares_tendencia.items():
             if tendencia != "Neutral":
@@ -47,11 +43,20 @@ class ForexReversalAnalyzer:
                     symbol_polygon = pair.replace("-", "")
                     df = self.obtener_datos_bollinger(symbol_polygon)
                     resultado_reversion = self.detectar_reversion(df, tendencia_simple)
-                    resultados[pair] = resultado_reversion
+                    if resultado_reversion:  # Solo guardar resultados si hay una reversión
+                        resultados[pair] = resultado_reversion  # Agregar al diccionario de resultados
                 except ValueError as e:
-                    resultados[pair] = f"Error en el análisis - {str(e)}"
+                    print(f"Error en el análisis para {pair} - {str(e)}")
 
-        return resultados
+        # Imprimir solo los resultados de las reversiones detectadas en un solo lugar
+        if resultados:  # Solo imprime si hay resultados
+            print("Reversiones detectadas:")
+            for pair, resultado in resultados.items():
+                print(f"{pair}: {resultado}")
+        else:
+            print("No se detectaron reversiones.")
+
+        return resultados  # Devolver el diccionario de resultados
 
 # Ejemplo de uso
 if __name__ == "__main__":
@@ -65,17 +70,17 @@ if __name__ == "__main__":
 
     # Ejemplo de pares en tendencia desde ForexAnalyzer (Simulado)
     pares_en_tendencia = {
-        "GBP-USD": "Tendencia Alcista",
-        "USD-CHF": "Tendencia Bajista",
-        "USD-JPY": "Neutral",
-        "GBP-CAD": "Tendencia Alcista",
-        "USD-CAD": "Tendencia Bajista"
+        "AUD-USD": "AUDUSD Tendencia Bajista",
+        "NZD-USD": "NZDUSD Tendencia Bajista",
+        "USD-CHF": "USDCHF Tendencia Alcista",
+        "USD-INR": "USDINR Tendencia Bajista",
+        "EUR-CHF": "EURCHF Tendencia Alcista",
+        "GBP-EUR": "GBPEUR Tendencia Bajista",
+        "GBP-CHF": "GBPCHF Tendencia Alcista",
+        "GBP-INR": "GBPINR Tendencia Bajista",
+        "CAD-JPY": "CADJPY Tendencia Alcista",
+        "USD-SGD": "USDSGD Tendencia Alcista"
     }
 
     # Analizar reversiones
     resultados_reversiones = reversal_analyzer.analizar_reversiones(pares_en_tendencia)
-
-    # Imprimir resultados
-    for pair, resultado in resultados_reversiones.items():
-        print(f"{pair}: {resultado}")
-
