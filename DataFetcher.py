@@ -2,12 +2,11 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
-
 class DataFetcher:
     def __init__(self, api_key_polygon):
         self.api_key_polygon = api_key_polygon
 
-    def obtener_datos(self, symbol, timeframe='minute', range='1', days=1):
+    def obtener_datos(self, symbol, timeframe='hour', range='1', days=30):
         # Obtener fechas para la solicitud usando datetime.now con timezone.utc
         fecha_actual = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         fecha_inicio = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d')
@@ -45,8 +44,9 @@ if __name__ == "__main__":
     # Prueba con un símbolo específico
     try:
         # Puedes ajustar el símbolo, timeframe, rango y días según sea necesario
-        df = data_fetcher.obtener_datos(symbol="EURUSD", timeframe='minute', range='1', days=1)
+        df = data_fetcher.obtener_datos(symbol="EURUSD", timeframe='hour', range='1', days=30)
         print("Datos obtenidos con éxito:")
         print(df)  # Muestra el DataFrame completo para inspección
     except Exception as e:
         print(f"Error al obtener datos: {e}")
+
