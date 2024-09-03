@@ -34,4 +34,17 @@ class DataFetcher:
             print(df.head())  # Mostrar los primeros registros para validación
             return df[['Open', 'High', 'Low', 'Close', 'Volume']]
         else:
-            raise ValueError(f"No se pudieron obtener datos de la API para {symbol}.")
+
+if __name__ == "__main__":
+    # Instancia de DataFetcher con tu API key
+    api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"  # Usa tu clave API aquí
+    data_fetcher = DataFetcher(api_key_polygon)
+    
+    # Prueba con un símbolo específico
+    try:
+        # Puedes ajustar el símbolo, timeframe, rango y días según sea necesario
+        df = data_fetcher.obtener_datos(symbol="EURUSD", timeframe='hour', range='1', days=10)
+        print("Datos obtenidos con éxito:")
+        print(df)  # Muestra el DataFrame completo para inspección
+    except Exception as e:
+        print(f"Error al obtener datos: {e}")
