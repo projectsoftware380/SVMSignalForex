@@ -14,10 +14,10 @@ with open("config.json") as config_file:
 data_fetcher = DataFetcher(config['api_key_polygon'])
 
 # Instanciar las clases necesarias
+mt5_executor = MetaTrader5Executor()  # Crear instancia del ejecutor de MT5
 forex_analyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'])
 forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher)
-forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher)
-mt5_executor = MetaTrader5Executor()
+forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor)  # Pasar el ejecutor de MT5
 
 # Conectar MetaTrader 5
 if not mt5_executor.conectar_mt5():
@@ -37,21 +37,12 @@ def operar_pares():
         
         # 2. Monitorear reversiones solo en pares con tendencia clara (cada 15 minutos)
         pares_reversion = forex_reversal_analyzer.analizar_reversiones(pares_tendencia)
-        # Eliminamos la impresión de las reversiones detectadas
-        # for pair, resultado_reversion in pares_reversion.items():
-        #     print(f"Reversión para {pair}: {resultado_reversion}")
         
         # 3. Generar señales solo en pares con reversión detectada (cada 3 minutos)
         for pair, reversion in pares_reversion.items():
             if "Reversión" in reversion:
                 resultado_senal = forex_signal_analyzer.analizar_senales({pair: reversion})
                 print(f"Señal para {pair}: {resultado_senal[pair]}")
-                
-                # Ejecutar órdenes si hay señal detectada
-                if "Señal de Compra Detectada" in resultado_senal[pair]:
-                    mt5_executor.ejecutar_orden(pair.replace("-", ""), "buy")
-                elif "Señal de Venta Detectada" in resultado_senal[pair]:
-                    mt5_executor.ejecutar_orden(pair.replace("-", ""), "sell")
         
         # 4. Monitorear cierres por cambio de tendencia
         for pair in pares_tendencia:
@@ -75,4 +66,3 @@ while True:
 
 # Cerrar conexión a MetaTrader 5 al terminar
 mt5_executor.cerrar_conexion()
-
