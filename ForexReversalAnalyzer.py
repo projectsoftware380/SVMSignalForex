@@ -1,6 +1,5 @@
 import pandas as pd
 import pandas_ta as ta
-from datetime import datetime, timezone
 from DataFetcher import DataFetcher
 
 class ForexReversalAnalyzer:
@@ -12,21 +11,18 @@ class ForexReversalAnalyzer:
         Solicita los datos más recientes para calcular las Bandas de Bollinger.
         Se obtienen datos de los últimos 5 días con velas de 15 minutos.
         """
-        # Solicitar los datos más recientes, 5 días hacia atrás
         df = self.data_fetcher.obtener_datos(symbol=symbol, timeframe='minute', range='15', days=5)
         return df
 
-    def detectar_reversion(self, df, tendencia, symbol_polygon):
+    def detectar_reversion(self, df, tendencia):
         """
         Detecta una posible reversión basada en las Bandas de Bollinger y la tendencia actual.
         """
-        # Aplicar las Bandas de Bollinger
         bollinger = ta.bbands(df['Close'], length=20, std=2)
         df['mid'] = bollinger['BBM_20_2.0']  # Línea central
         precio_actual = df['Close'].iloc[-1]
         linea_central = df['mid'].iloc[-1]
 
-        # Determinar la reversión basada en la tendencia y el precio actual
         if tendencia == "Tendencia Alcista" and precio_actual < linea_central:
             return "Reversión Alcista Detectada"
         elif tendencia == "Tendencia Bajista" and precio_actual > linea_central:
@@ -38,47 +34,35 @@ class ForexReversalAnalyzer:
         """
         Analiza los pares de divisas en tendencia para detectar posibles reversiones.
         """
+        # Imprimir el diccionario que recibe
+        print("Diccionario de pares en tendencia recibido:")
+        print(pares_tendencia)
+
         resultados = {}
-        
-        # Verificar que el diccionario de tendencias esté actualizado
-        if not pares_tendencia:
-            return resultados
-        
+
         for pair, tendencia in pares_tendencia.items():
             if tendencia != "Neutral":
                 try:
-                    # Determinar la tendencia simplificada
-                    if "Tendencia Alcista" in tendencia:
-                        tendencia_simple = "Tendencia Alcista"
-                    elif "Tendencia Bajista" in tendencia:
-                        tendencia_simple = "Tendencia Bajista"
-                    else:
-                        tendencia_simple = "Neutral"
-                    
+                    tendencia_simple = "Tendencia Alcista" if "Tendencia Alcista" in tendencia else "Tendencia Bajista"
                     symbol_polygon = pair.replace("-", "")
                     df = self.obtener_datos_bollinger(symbol_polygon)
-                    resultado_reversion = self.detectar_reversion(df, tendencia_simple, symbol_polygon)
+                    resultado_reversion = self.detectar_reversion(df, tendencia_simple)
                     resultados[pair] = resultado_reversion
-                    
-                    # Imprimir solo si se detecta una reversión
-                    if "Reversión" in resultado_reversion:
-                        print(f"Reversión para {pair}: {resultado_reversion}")
                 except ValueError as e:
                     resultados[pair] = f"Error en el análisis - {str(e)}"
-        
-        # Retornar el diccionario con los resultados de las reversiones
+
         return resultados
 
 # Ejemplo de uso
 if __name__ == "__main__":
     api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"  # Reemplaza con tu clave API
-    
+
     # Instancia de DataFetcher
     data_fetcher = DataFetcher(api_key_polygon)
-    
+
     # Instancia de ForexReversalAnalyzer utilizando DataFetcher
     reversal_analyzer = ForexReversalAnalyzer(data_fetcher)
-    
+
     # Ejemplo de pares en tendencia desde ForexAnalyzer (Simulado)
     pares_en_tendencia = {
         "GBP-USD": "Tendencia Alcista",
@@ -87,15 +71,11 @@ if __name__ == "__main__":
         "GBP-CAD": "Tendencia Alcista",
         "USD-CAD": "Tendencia Bajista"
     }
-    
-    # Verificar si el diccionario está vacío
-    if not pares_en_tendencia:
-        print("El diccionario de pares en tendencia está vacío. No se calcularán reversiones.")
-    else:
-        # Analizar reversiones
-        resultados_reversiones = reversal_analyzer.analizar_reversiones(pares_en_tendencia)
-        
-        # Opcionalmente, imprimir todos los resultados
-        for pair, resultado in resultados_reversiones.items():
-            print(f"{pair}: {resultado}")
+
+    # Analizar reversiones
+    resultados_reversiones = reversal_analyzer.analizar_reversiones(pares_en_tendencia)
+
+    # Imprimir resultados
+    for pair, resultado in resultados_reversiones.items():
+        print(f"{pair}: {resultado}")
 

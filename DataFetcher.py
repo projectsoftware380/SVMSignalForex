@@ -19,19 +19,12 @@ class DataFetcher:
         fecha_actual = datetime.now(timezone.utc)
         fecha_inicio = fecha_actual - timedelta(days=days)
 
-        # Verificación de fechas
-        print(f"Fecha de inicio: {fecha_inicio.strftime('%Y-%m-%d')}")
-        print(f"Fecha actual: {fecha_actual.strftime('%Y-%m-%d')}")
-
         url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/{range}/{timeframe}/{fecha_inicio.strftime('%Y-%m-%d')}/{fecha_actual.strftime('%Y-%m-%d')}"
         params = {
             "adjusted": "true",
             "sort": "desc",
             "apiKey": self.api_key_polygon
         }
-
-        # Verificación de URL
-        print(f"URL solicitada: {url}")
 
         response = requests.get(url, params=params)
         if response.status_code != 200:
@@ -70,27 +63,3 @@ class DataFetcher:
         days = 60 if timeframe == 'day' else 30  # Ajusta la cantidad de días según el timeframe
         return self.obtener_datos(symbol, timeframe=timeframe, range='1', days=days)
 
-if __name__ == "__main__":
-    # Instancia de DataFetcher con tu API key
-    api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"  # Usa tu clave API aquí
-    data_fetcher = DataFetcher(api_key_polygon)
-    
-    # Ejemplo de cómo las otras clases pueden solicitar datos
-    try:
-        # Obtener datos para un timeframe de 1 hora
-        df_hourly = data_fetcher.obtener_datos(symbol="EURUSD", timeframe='hour', range='1', days=10)
-        print("Datos de 1 hora obtenidos con éxito:")
-        print(df_hourly.tail())
-
-        # Obtener datos para un timeframe de 15 minutos
-        df_15min = data_fetcher.obtener_datos(symbol="EURUSD", timeframe='minute', range='15', days=2)
-        print("Datos de 15 minutos obtenidos con éxito:")
-        print(df_15min.tail())
-
-        # Obtener datos específicos para calcular Ichimoku
-        df_ichimoku = data_fetcher.obtener_datos_para_ichimoku(symbol="EURUSD", timeframe='hour')
-        print("Datos para Ichimoku obtenidos con éxito:")
-        print(df_ichimoku.tail())
-
-    except Exception as e:
-        print(f"Error al obtener datos: {e}")
