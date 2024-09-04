@@ -1,9 +1,11 @@
 import MetaTrader5 as mt5
 import time
+import threading
 
 class MetaTrader5Executor:
     def __init__(self):
         self.conectado = False
+        self.operaciones_abiertas = {}  # Guardar las operaciones activas para un posible monitoreo
 
     def conectar_mt5(self):
         if not mt5.initialize():
@@ -69,6 +71,7 @@ class MetaTrader5Executor:
             print(f"Fallo al enviar orden: {mt5.last_error()}")
             return None  # Retorna None si falla
         print(f"Orden ejecutada exitosamente, ID de orden: {result.order}")
+        self.operaciones_abiertas[symbol] = result.order  # Guarda la operación activa
         return result.order  # Devuelve el ID de la orden si tiene éxito
 
     def cerrar_posicion(self, symbol, position_id):
@@ -96,17 +99,51 @@ class MetaTrader5Executor:
             print(f"Fallo al cerrar posición: {mt5.last_error()}")
             return False  # Retorna False si falla
         print(f"Posición cerrada exitosamente.")
+        if symbol in self.operaciones_abiertas:
+            del self.operaciones_abiertas[symbol]  # Elimina la operación cerrada del monitoreo
         return True  # Retorna True si tiene éxito
+
+    def monitorear_operaciones(self):
+        """
+        Monitorea continuamente las operaciones abiertas y aplica las condiciones de cierre.
+        """
+        while True:
+            for symbol, position_id in list(self.operaciones_abiertas.items()):
+                # Aquí se pueden agregar las condiciones de cierre, como cambio de tendencia o reversión
+                # Ejemplo de una simple condición de cierre simulada
+                print(f"Monitoreando operación {symbol} con ID {position_id}")
+                # Si se cumple alguna condición técnica, se puede cerrar la posición
+                # Aquí puedes integrar las condiciones usando las otras clases ForexAnalyzer, etc.
+                
+                # Este bloque es un placeholder para implementar la lógica de cierre
+                tendencia_actual = "Neutral"  # Esta sería la tendencia obtenida de ForexAnalyzer
+                if tendencia_actual == "Neutral":
+                    print(f"Cerrando posición para {symbol} debido a cambio de tendencia a Neutral.")
+                    self.cerrar_posicion(symbol, position_id)
+
+            time.sleep(60)  # Espera 1 minuto antes de volver a monitorear
+
+    def iniciar_monitoreo(self):
+        """
+        Inicia el monitoreo de las operaciones en un hilo separado.
+        """
+        thread = threading.Thread(target=self.monitorear_operaciones)
+        thread.daemon = True
+        thread.start()
 
     def cerrar_conexion(self):
         mt5.shutdown()
         self.conectado = False
+
 
 # Ejemplo de uso
 if __name__ == "__main__":
     executor = MetaTrader5Executor()
     
     if executor.conectar_mt5():
+        # Iniciar el monitoreo en un hilo separado
+        executor.iniciar_monitoreo()
+
         # Ejemplo de ejecución de órdenes
         order_id = executor.ejecutar_orden("USDJPY", "buy")
         
