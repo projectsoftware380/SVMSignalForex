@@ -12,7 +12,19 @@ class MetaTrader5Executor:
             print("Error al conectar con MetaTrader 5, código de error =", mt5.last_error())
             return False
         self.conectado = True
+        self.sincronizar_operaciones_existentes()  # Sincronizar las operaciones al iniciar
         return True
+
+    def sincronizar_operaciones_existentes(self):
+        """
+        Sincroniza las posiciones abiertas de MetaTrader 5 con el diccionario 'operaciones_abiertas'.
+        """
+        posiciones = self.obtener_posiciones_abiertas()
+        for posicion in posiciones:
+            symbol = posicion['symbol']
+            position_id = posicion['ticket']
+            self.operaciones_abiertas[symbol] = position_id
+        print(f"Sincronización completada: {len(self.operaciones_abiertas)} operaciones sincronizadas.")
 
     def seleccionar_simbolo(self, symbol):
         symbol_info = mt5.symbol_info(symbol)
