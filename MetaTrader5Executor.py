@@ -12,25 +12,44 @@ class MetaTrader5Executor:
         self.conectado = True
         return True
 
+    def seleccionar_simbolo(self, symbol):
+        """
+        Se asegura de que el símbolo esté visible en MarketWatch.
+        """
+        symbol_info = mt5.symbol_info(symbol)
+        if symbol_info is None:
+            print(f"El símbolo {symbol} no se encuentra disponible.")
+            return False
+        
+        if not symbol_info.visible:
+            print(f"El símbolo {symbol} no está visible. Intentando hacerlo visible...")
+            if not mt5.symbol_select(symbol, True):
+                print(f"No se pudo seleccionar el símbolo {symbol}, código de error: {mt5.last_error()}")
+                return False
+            print(f"Símbolo {symbol} visible en MarketWatch.")
+        return True
+
     def ejecutar_orden(self, symbol, order_type):
         if not self.conectado:
             print("Intento de ejecutar orden sin conexión.")
             return
         
+        # Asegurarse de que el símbolo esté visible en MarketWatch
+        if not self.seleccionar_simbolo(symbol):
+            return
+
         # Preparar el símbolo
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None or not symbol_info.visible:
             print(f"El símbolo {symbol} no está disponible o visible.")
-            if not mt5.symbol_select(symbol, True):
-                print(f"No se pudo seleccionar el símbolo {symbol}.")
-                return
-        
+            return
+
         # Preparar los detalles de la orden
         lot = 0.1  # Tamaño del lote
         price = mt5.symbol_info_tick(symbol).ask if order_type == "buy" else mt5.symbol_info_tick(symbol).bid
         deviation = 20
         order_type_mt5 = mt5.ORDER_TYPE_BUY if order_type == "buy" else mt5.ORDER_TYPE_SELL
-        
+
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
