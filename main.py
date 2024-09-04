@@ -68,9 +68,11 @@ def evaluar_reversiones(pares_tendencia):
         
         # Generar señales en los pares con reversiones detectadas
         for pair, reversion in pares_reversion.items():
-            if "Reversión" in reversion:
+            if isinstance(reversion, dict) and "Reversión" in reversion:
                 resultado_senal = forex_signal_analyzer.analizar_senales({pair: reversion})
                 print(f"Señal para {pair}: {resultado_senal[pair]}")
+            else:
+                print(f"Formato inesperado de datos en {pair}: {reversion}")
     except Exception as e:
         print(f"Error durante la evaluación de reversiones: {str(e)}")
 
