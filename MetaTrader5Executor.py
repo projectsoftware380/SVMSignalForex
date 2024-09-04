@@ -37,8 +37,6 @@ class MetaTrader5Executor:
             "volume": lot,
             "type": order_type_mt5,
             "price": price,
-            "sl": 0,  # Deshabilitar Stop Loss
-            "tp": 0,  # Deshabilitar Take Profit
             "deviation": deviation,
             "magic": 234000,
             "comment": "Orden automática",
@@ -65,7 +63,7 @@ class MetaTrader5Executor:
             "action": mt5.TRADE_ACTION_DEAL,
             "position": position_id,
             "symbol": symbol,
-            "volume": 0.1,  # Mantén el mismo tamaño de lote
+            "volume": 0.1,
             "type": mt5.ORDER_TYPE_SELL,
             "price": price,
             "deviation": 20,
