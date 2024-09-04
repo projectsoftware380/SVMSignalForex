@@ -61,7 +61,9 @@ while True:
     except KeyboardInterrupt:
         print("Proceso interrumpido manualmente.")
         break
+    except Exception as e:
+        print(f"Error inesperado: {e}")
+        continue  # Opcional: decide si deseas continuar automáticamente o no
 
 # Cerrar conexión a MetaTrader 5 al terminar
 mt5_executor.cerrar_conexion()
-

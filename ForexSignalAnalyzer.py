@@ -36,14 +36,18 @@ class ForexSignalAnalyzer:
         """
         rsi = ta.rsi(df['Close'], length=2)
         rsi_actual = rsi.iloc[-1]  # Valor del RSI actual
-
-        # Imprimir el valor del RSI actual
         print(f"{symbol}: RSI actual = {rsi_actual:.2f}")
 
         if reverso_tendencia == "Reversión Alcista Detectada" and rsi_actual < 20:
-            return "Señal de Compra Detectada" if not self.verificar_operacion_abierta(symbol, "compra") else "No hay Señal de Compra"
+            if not self.verificar_operacion_abierta(symbol, "compra"):
+                print(f"{symbol}: Señal de Compra Detectada")
+                return "Señal de Compra Detectada"
+            return "No hay Señal de Compra"
         elif reverso_tendencia == "Reversión Bajista Detectada" and rsi_actual > 80:
-            return "Señal de Venta Detectada" if not self.verificar_operacion_abierta(symbol, "venta") else "No hay Señal de Venta"
+            if not self.verificar_operacion_abierta(symbol, "venta"):
+                print(f"{symbol}: Señal de Venta Detectada")
+                return "Señal de Venta Detectada"
+            return "No hay Señal de Venta"
         return "Neutral - No se analiza señal"
 
     def analizar_senales(self, pares_reversiones):
@@ -59,11 +63,8 @@ class ForexSignalAnalyzer:
             resultados[pair] = resultado_senal
             
             if "Señal de Compra Detectada" in resultado_senal or "Señal de Venta Detectada" in resultado_senal:
-                print(f"Intentando ejecutar orden para {pair} con tipo {'compra' if 'Compra' in resultado_senal else 'venta'}")
                 self.mt5_executor.ejecutar_orden(symbol_polygon, "buy" if "Compra" in resultado_senal else "sell")
-            else:
-                print(f"No se ejecuta orden para {pair} debido a que ya existe una operación abierta o no hay señal válida.")
-        
+
         return resultados
 
 # Ejemplo de uso
@@ -71,7 +72,7 @@ if __name__ == "__main__":
     api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"
     
     data_fetcher = DataFetcher(api_key_polygon)
-    mt5_executor = MetaTrader5Executor()  # Asegúrate de que esté instanciado
+    mt5_executor = MetaTrader5Executor()
     signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor)
     
     pares_reversiones = {
@@ -82,7 +83,6 @@ if __name__ == "__main__":
         "USD-CAD": "Reversión Bajista Detectada"
     }
     
-    # Analizar señales de trading
     resultados_senales = signal_analyzer.analizar_senales(pares_reversiones)
 
 
