@@ -15,9 +15,6 @@ class MetaTrader5Executor:
         return True
 
     def seleccionar_simbolo(self, symbol):
-        """
-        Se asegura de que el símbolo esté visible en MarketWatch.
-        """
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
             print(f"El símbolo {symbol} no se encuentra disponible.")
@@ -36,18 +33,15 @@ class MetaTrader5Executor:
             print("Intento de ejecutar orden sin conexión.")
             return
         
-        # Asegurarse de que el símbolo esté visible en MarketWatch
         if not self.seleccionar_simbolo(symbol):
             return
 
-        # Preparar el símbolo
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None or not symbol_info.visible:
             print(f"El símbolo {symbol} no está disponible o visible.")
             return
 
-        # Preparar los detalles de la orden
-        lot = 0.1  # Tamaño del lote
+        lot = 0.1
         price = mt5.symbol_info_tick(symbol).ask if order_type == "buy" else mt5.symbol_info_tick(symbol).bid
         deviation = 20
         order_type_mt5 = mt5.ORDER_TYPE_BUY if order_type == "buy" else mt5.ORDER_TYPE_SELL
@@ -69,17 +63,16 @@ class MetaTrader5Executor:
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
             print(f"Fallo al enviar orden: {mt5.last_error()}")
-            return None  # Retorna None si falla
+            return None
         print(f"Orden ejecutada exitosamente, ID de orden: {result.order}")
-        self.operaciones_abiertas[symbol] = result.order  # Guarda la operación activa
-        return result.order  # Devuelve el ID de la orden si tiene éxito
+        self.operaciones_abiertas[symbol] = result.order
+        return result.order
 
     def cerrar_posicion(self, symbol, position_id):
         if not self.conectado:
             print("Intento de cerrar posición sin conexión.")
             return
         
-        # Cierra la posición abierta basada en el ticket
         price = mt5.symbol_info_tick(symbol).bid
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
@@ -97,52 +90,57 @@ class MetaTrader5Executor:
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
             print(f"Fallo al cerrar posición: {mt5.last_error()}")
-            return False  # Retorna False si falla
+            return False
         print(f"Posición cerrada exitosamente.")
         if symbol in self.operaciones_abiertas:
-            del self.operaciones_abiertas[symbol]  # Elimina la operación cerrada del monitoreo
-        return True  # Retorna True si tiene éxito
+            del self.operaciones_abiertas[symbol]
+        return True
+
+    def procesar_reversion(self, symbol, tipo_operacion):
+        """
+        Procesa la reversión detectada y toma acciones en consecuencia.
+        Si ya hay una operación abierta en la dirección contraria, la cierra.
+        """
+        posiciones_abiertas = self.obtener_posiciones_abiertas()
+
+        for posicion in posiciones_abiertas:
+            if posicion['symbol'] == symbol:
+                if (posicion['type'] == mt5.ORDER_TYPE_BUY and tipo_operacion == 'sell') or \
+                   (posicion['type'] == mt5.ORDER_TYPE_SELL and tipo_operacion == 'buy'):
+                    print(f"Se detectó una señal contraria para {symbol}, cerrando posición.")
+                    self.cerrar_posicion(symbol, posicion['ticket'])
+                    return True
+        return False
 
     def obtener_posiciones_abiertas(self):
         """
-        Devuelve todas las posiciones abiertas actualmente.
+        Devuelve una lista de las posiciones abiertas actualmente.
         """
         posiciones = mt5.positions_get()
         if posiciones is None:
-            print(f"Error obteniendo posiciones abiertas, código de error: {mt5.last_error()}")
+            print(f"Error obteniendo posiciones: {mt5.last_error()}")
             return []
         
-        # Convertir las posiciones a un formato manejable (diccionario)
-        posiciones_abiertas = []
+        lista_posiciones = []
         for posicion in posiciones:
-            posiciones_abiertas.append({
+            lista_posiciones.append({
                 'symbol': posicion.symbol,
                 'ticket': posicion.ticket,
-                'type': posicion.type,
+                'type': posicion.type
             })
-        return posiciones_abiertas
+        return lista_posiciones
 
     def monitorear_operaciones(self):
-        """
-        Monitorea continuamente las operaciones abiertas y aplica las condiciones de cierre.
-        """
         while True:
             for symbol, position_id in list(self.operaciones_abiertas.items()):
                 print(f"Monitoreando operación {symbol} con ID {position_id}")
-                # Aquí puedes integrar las condiciones usando las otras clases ForexAnalyzer, etc.
-                
-                # Este bloque es un placeholder para implementar la lógica de cierre
-                tendencia_actual = "Neutral"  # Esta sería la tendencia obtenida de ForexAnalyzer
+                tendencia_actual = "Neutral"
                 if tendencia_actual == "Neutral":
                     print(f"Cerrando posición para {symbol} debido a cambio de tendencia a Neutral.")
                     self.cerrar_posicion(symbol, position_id)
-
-            time.sleep(60)  # Espera 1 minuto antes de volver a monitorear
+            time.sleep(60)
 
     def iniciar_monitoreo(self):
-        """
-        Inicia el monitoreo de las operaciones en un hilo separado.
-        """
         thread = threading.Thread(target=self.monitorear_operaciones)
         thread.daemon = True
         thread.start()
@@ -150,25 +148,3 @@ class MetaTrader5Executor:
     def cerrar_conexion(self):
         mt5.shutdown()
         self.conectado = False
-
-
-# Ejemplo de uso
-if __name__ == "__main__":
-    executor = MetaTrader5Executor()
-    
-    if executor.conectar_mt5():
-        # Iniciar el monitoreo en un hilo separado
-        executor.iniciar_monitoreo()
-
-        # Ejemplo de ejecución de órdenes
-        order_id = executor.ejecutar_orden("USDJPY", "buy")
-        
-        # Esperar antes de cerrar la posición
-        time.sleep(2)
-        
-        # Ejemplo de cierre de posiciones
-        if order_id:
-            executor.cerrar_posicion("USDJPY", order_id)
-        
-        # Cerrar la conexión cuando hayas terminado
-        executor.cerrar_conexion()
