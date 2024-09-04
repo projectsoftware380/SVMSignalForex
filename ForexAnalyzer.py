@@ -9,6 +9,7 @@ class ForexAnalyzer:
     def __init__(self, data_fetcher, api_token_forexnews):
         self.data_fetcher = data_fetcher
         self.api_token_forexnews = api_token_forexnews
+        self.last_trend = {}  # Almacena la última tendencia de cada par
 
     def calcular_sma(self, series, length):
         if len(series) < length:
@@ -68,6 +69,9 @@ class ForexAnalyzer:
             raise ValueError(f"No se encontraron datos para el par {pair}")
 
     def analizar_par(self, pair):
+        """
+        Analiza el par de divisas para determinar la tendencia y sentimiento.
+        """
         try:
             symbol_polygon = pair.replace("-", "")
             df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=60)
@@ -84,6 +88,22 @@ class ForexAnalyzer:
         except ValueError as e:
             return f"{pair}: Error en el análisis - {str(e)}"
 
+    def detectar_cambio_tendencia(self, pair):
+        """
+        Detecta si ha habido un cambio en la tendencia para un par específico.
+        """
+        tendencia_actual = self.analizar_par(pair)
+        if pair not in self.last_trend:
+            self.last_trend[pair] = tendencia_actual
+            return False  # No se considera un cambio si no hay historial
+
+        if tendencia_actual != self.last_trend[pair]:
+            print(f"Cambio de tendencia detectado en {pair}: de {self.last_trend[pair]} a {tendencia_actual}")
+            self.last_trend[pair] = tendencia_actual
+            return True  # Cambio de tendencia detectado
+
+        return False
+
 # Uso del programa
 if __name__ == "__main__":
     api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"
@@ -98,3 +118,4 @@ if __name__ == "__main__":
     for pair in pairs:
         resultado = analyzer.analizar_par(pair)
         print(resultado)  # Solo imprime el resultado final para cada par de divisas
+
