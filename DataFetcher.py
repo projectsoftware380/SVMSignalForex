@@ -6,6 +6,20 @@ class DataFetcher:
     def __init__(self, api_key_polygon):
         self.api_key_polygon = api_key_polygon
 
+    def obtener_estado_mercado(self):
+        """
+        Verifica si el mercado de divisas (forex) está abierto a través de la API de Polygon.
+        """
+        url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
+        response = requests.get(url)
+        if response.status_code != 200:
+            raise ValueError(f"Error al obtener el estado del mercado: {response.status_code}")
+        
+        market_status = response.json()
+        if 'fx' in market_status and market_status['fx'] == "open":
+            return True
+        return False
+
     def obtener_datos(self, symbol, timeframe='hour', range='1', days=1):
         """
         Obtiene los datos históricos para un símbolo específico en un timeframe dado.
@@ -16,6 +30,10 @@ class DataFetcher:
         :param days: Número de días de historia a recuperar.
         :return: DataFrame con los datos obtenidos.
         """
+        # Verificar si el mercado está abierto
+        if not self.obtener_estado_mercado():
+            raise ValueError("El mercado está cerrado. No se pueden obtener datos.")
+
         fecha_actual = datetime.now(timezone.utc)
         fecha_inicio = fecha_actual - timedelta(days=days)
 
