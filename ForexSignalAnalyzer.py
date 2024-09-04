@@ -1,12 +1,12 @@
 import pandas as pd
 import pandas_ta as ta
 from DataFetcher import DataFetcher
+import MetaTrader5 as mt5
 
 class ForexSignalAnalyzer:
     def __init__(self, data_fetcher, mt5_executor):
         self.data_fetcher = data_fetcher
         self.mt5_executor = mt5_executor  # Agregar el ejecutor de MT5
-        self.operaciones_abiertas = {}  # Diccionario para almacenar las operaciones abiertas
 
     def obtener_datos_rsi(self, symbol):
         """
@@ -19,7 +19,16 @@ class ForexSignalAnalyzer:
         """
         Verifica si ya hay una operación abierta con el mismo símbolo y tipo (compra/venta).
         """
-        return self.operaciones_abiertas.get(symbol) == tipo
+        positions = mt5.positions_get(symbol=symbol)
+        if positions is None:
+            print(f"No se encontraron posiciones abiertas para {symbol}, error code={mt5.last_error()}")
+            return False
+        for position in positions:
+            if (position.type == mt5.ORDER_TYPE_BUY and tipo == "compra") or \
+               (position.type == mt5.ORDER_TYPE_SELL and tipo == "venta"):
+                print(f"Ya existe una operación abierta para {symbol} tipo {tipo}.")
+                return True
+        return False
 
     def generar_senal_trading(self, df, reverso_tendencia, symbol):
         """
@@ -31,22 +40,11 @@ class ForexSignalAnalyzer:
         # Imprimir el valor del RSI actual
         print(f"{symbol}: RSI actual = {rsi_actual:.2f}")
 
-        if reverso_tendencia == "Reversión Alcista Detectada":
-            if rsi_actual < 20:
-                if not self.verificar_operacion_abierta(symbol, "compra"):
-                    self.operaciones_abiertas[symbol] = "compra"
-                    print(f"{symbol}: Señal de Compra Detectada")
-                    return "Señal de Compra Detectada"
-            return "No hay Señal de Compra"
-        elif reverso_tendencia == "Reversión Bajista Detectada":
-            if rsi_actual > 80:
-                if not self.verificar_operacion_abierta(symbol, "venta"):
-                    self.operaciones_abiertas[symbol] = "venta"
-                    print(f"{symbol}: Señal de Venta Detectada")
-                    return "Señal de Venta Detectada"
-            return "No hay Señal de Venta"
-        else:
-            return "Neutral - No se analiza señal"
+        if reverso_tendencia == "Reversión Alcista Detectada" and rsi_actual < 20:
+            return "Señal de Compra Detectada" if not self.verificar_operacion_abierta(symbol, "compra") else "No hay Señal de Compra"
+        elif reverso_tendencia == "Reversión Bajista Detectada" and rsi_actual > 80:
+            return "Señal de Venta Detectada" if not self.verificar_operacion_abierta(symbol, "venta") else "No hay Señal de Venta"
+        return "Neutral - No se analiza señal"
 
     def analizar_senales(self, pares_reversiones):
         """
@@ -60,8 +58,7 @@ class ForexSignalAnalyzer:
             resultado_senal = self.generar_senal_trading(df, reverso_tendencia, symbol_polygon)
             resultados[pair] = resultado_senal
             
-            # Verificar si hay una señal y si no hay operaciones abiertas
-            if ("Señal de Compra Detectada" in resultado_senal or "Señal de Venta Detectada" in resultado_senal) and not self.verificar_operacion_abierta(symbol_polygon, "compra" if "Compra" in resultado_senal else "venta"):
+            if "Señal de Compra Detectada" in resultado_senal or "Señal de Venta Detectada" in resultado_senal:
                 print(f"Intentando ejecutar orden para {pair} con tipo {'compra' if 'Compra' in resultado_senal else 'venta'}")
                 self.mt5_executor.ejecutar_orden(symbol_polygon, "buy" if "Compra" in resultado_senal else "sell")
             else:
@@ -87,4 +84,5 @@ if __name__ == "__main__":
     
     # Analizar señales de trading
     resultados_senales = signal_analyzer.analizar_senales(pares_reversiones)
+
 
