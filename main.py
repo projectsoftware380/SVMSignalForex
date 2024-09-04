@@ -32,7 +32,7 @@ def operar_pares():
         for pair in config['pairs']:
             resultado = forex_analyzer.analizar_par(pair)
             print(f"Tendencia para {pair}: {resultado}")
-            if "Tendencia Alcista" in resultado or "Tendencia Bajista" in resultado:
+            if "Tendencia" in resultado:
                 pares_tendencia[pair] = resultado
         
         # 2. Monitorear reversiones solo en pares con tendencia clara (cada 15 minutos)
@@ -47,9 +47,7 @@ def operar_pares():
         # 4. Monitorear cierres por cambio de tendencia
         for pair in pares_tendencia:
             nueva_tendencia = forex_analyzer.analizar_par(pair)
-            if ("Tendencia Alcista" in pares_tendencia[pair] and "Tendencia Bajista" in nueva_tendencia) or \
-            ("Tendencia Bajista" in pares_tendencia[pair] and "Tendencia Alcista" in nueva_tendencia) or \
-            ("Neutral" in nueva_tendencia):
+            if nueva_tendencia != pares_tendencia[pair]:
                 print(f"Cambio de tendencia detectado para {pair}. Cerrando posiciones.")
                 mt5_executor.cerrar_posicion(pair.replace("-", ""))
     except Exception as e:
@@ -66,3 +64,4 @@ while True:
 
 # Cerrar conexión a MetaTrader 5 al terminar
 mt5_executor.cerrar_conexion()
+

@@ -28,16 +28,21 @@ class ForexSignalAnalyzer:
         rsi = ta.rsi(df['Close'], length=2)
         rsi_actual = rsi.iloc[-1]  # Valor del RSI actual
 
+        # Imprimir el valor del RSI actual
+        print(f"{symbol}: RSI actual = {rsi_actual:.2f}")
+
         if reverso_tendencia == "Reversión Alcista Detectada":
             if rsi_actual < 20:
                 if not self.verificar_operacion_abierta(symbol, "compra"):
                     self.operaciones_abiertas[symbol] = "compra"
+                    print(f"{symbol}: Señal de Compra Detectada")
                     return "Señal de Compra Detectada"
             return "No hay Señal de Compra"
         elif reverso_tendencia == "Reversión Bajista Detectada":
             if rsi_actual > 80:
                 if not self.verificar_operacion_abierta(symbol, "venta"):
                     self.operaciones_abiertas[symbol] = "venta"
+                    print(f"{symbol}: Señal de Venta Detectada")
                     return "Señal de Venta Detectada"
             return "No hay Señal de Venta"
         else:
@@ -49,33 +54,19 @@ class ForexSignalAnalyzer:
         """
         resultados = {}
         
-        if not pares_reversiones:
-            print("El diccionario de pares en reversión está vacío o no es válido.")
-            return resultados
-        
         for pair, reverso_tendencia in pares_reversiones.items():
-            if reverso_tendencia not in ["Reversión Alcista Detectada", "Reversión Bajista Detectada"]:
-                resultados[pair] = "Neutral - No se analiza señal"
+            symbol_polygon = pair.replace("-", "")
+            df = self.obtener_datos_rsi(symbol_polygon)
+            resultado_senal = self.generar_senal_trading(df, reverso_tendencia, symbol_polygon)
+            resultados[pair] = resultado_senal
+            
+            # Verificar si hay una señal y si no hay operaciones abiertas
+            if ("Señal de Compra Detectada" in resultado_senal or "Señal de Venta Detectada" in resultado_senal) and not self.verificar_operacion_abierta(symbol_polygon, "compra" if "Compra" in resultado_senal else "venta"):
+                print(f"Intentando ejecutar orden para {pair} con tipo {'compra' if 'Compra' in resultado_senal else 'venta'}")
+                self.mt5_executor.ejecutar_orden(symbol_polygon, "buy" if "Compra" in resultado_senal else "sell")
             else:
-                try:
-                    symbol_polygon = pair.replace("-", "")
-                    df = self.obtener_datos_rsi(symbol_polygon)
-                    resultado_senal = self.generar_senal_trading(df, reverso_tendencia, symbol_polygon)
-                    resultados[pair] = resultado_senal
-                    
-                    # Ejecutar la orden si hay señal detectada
-                    if "Señal de Compra Detectada" in resultado_senal:
-                        self.mt5_executor.ejecutar_orden(symbol_polygon, "buy")
-                    elif "Señal de Venta Detectada" in resultado_senal:
-                        self.mt5_executor.ejecutar_orden(symbol_polygon, "sell")
-                    
-                except ValueError as e:
-                    resultados[pair] = f"Error en el análisis - {str(e)}"
-
-        # Imprimir solo los resultados de las señales generadas
-        for pair, resultado in resultados.items():
-            print(f"{pair}: {resultado}")
-
+                print(f"No se ejecuta orden para {pair} debido a que ya existe una operación abierta o no hay señal válida.")
+        
         return resultados
 
 # Ejemplo de uso
@@ -96,3 +87,4 @@ if __name__ == "__main__":
     
     # Analizar señales de trading
     resultados_senales = signal_analyzer.analizar_senales(pares_reversiones)
+

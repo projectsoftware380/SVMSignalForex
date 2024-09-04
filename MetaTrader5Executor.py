@@ -14,12 +14,15 @@ class MetaTrader5Executor:
 
     def ejecutar_orden(self, symbol, order_type):
         if not self.conectado:
+            print("Intento de ejecutar orden sin conexión.")
             return
         
         # Preparar el símbolo
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None or not symbol_info.visible:
+            print(f"El símbolo {symbol} no está disponible o visible.")
             if not mt5.symbol_select(symbol, True):
+                print(f"No se pudo seleccionar el símbolo {symbol}.")
                 return
         
         # Preparar los detalles de la orden
@@ -43,14 +46,17 @@ class MetaTrader5Executor:
             "type_filling": mt5.ORDER_FILLING_FOK,
         }
         
-        # Ejecutar la orden
+        print(f"Enviando orden: {request}")
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            print(f"Fallo al enviar orden: {mt5.last_error()}")
             return None  # Retorna None si falla
+        print(f"Orden ejecutada exitosamente, ID de orden: {result.order}")
         return result.order  # Devuelve el ID de la orden si tiene éxito
 
     def cerrar_posicion(self, symbol, position_id):
         if not self.conectado:
+            print("Intento de cerrar posición sin conexión.")
             return
         
         # Cierra la posición abierta basada en el ticket
@@ -70,7 +76,9 @@ class MetaTrader5Executor:
         }
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            print(f"Fallo al cerrar posición: {mt5.last_error()}")
             return False  # Retorna False si falla
+        print(f"Posición cerrada exitosamente.")
         return True  # Retorna True si tiene éxito
 
     def cerrar_conexion(self):
