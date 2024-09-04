@@ -11,13 +11,18 @@ import json
 with open("config.json") as config_file:
     config = json.load(config_file)
 
+# Obtener los valores con manejo de claves faltantes
+loop_interval = config.get('loop_interval', 60)  # Si no está en el JSON, asignar 60
+tendencia_interval = config.get('tendencia_interval', 300)  # Valor por defecto de 300 segundos
+cierre_interval = config.get('cierre_interval', 180)  # Valor por defecto de 180 segundos
+
 # Crear una instancia de DataFetcher
 data_fetcher = DataFetcher(config['api_key_polygon'])
 
 # Instanciar las clases necesarias
 mt5_executor = MetaTrader5Executor()  # Crear instancia del ejecutor de MT5
 forex_analyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'])
-forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher)
+forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor)
 forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor)  # Pasar el ejecutor de MT5
 
 # Conectar MetaTrader 5
@@ -41,7 +46,7 @@ def evaluar_tendencias():
 
         except Exception as e:
             print(f"Error durante la evaluación de tendencias: {str(e)}")
-        time.sleep(config['tendencia_interval'])  # Esperar el intervalo definido antes de la siguiente evaluación
+        time.sleep(tendencia_interval)  # Esperar el intervalo definido antes de la siguiente evaluación
 
 # Función para evaluar las reversiones y generar señales
 def evaluar_reversiones(pares_tendencia):
@@ -82,7 +87,7 @@ def monitorear_cierres():
 
         except Exception as e:
             print(f"Error durante el monitoreo de cierres: {str(e)}")
-        time.sleep(config['cierre_interval'])  # Intervalo de espera antes de la siguiente evaluación de cierres
+        time.sleep(cierre_interval)  # Intervalo de espera antes de la siguiente evaluación de cierres
 
 # Iniciar hilos paralelos
 def iniciar_hilos():

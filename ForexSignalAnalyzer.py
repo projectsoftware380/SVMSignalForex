@@ -3,6 +3,8 @@ import pandas_ta as ta
 from DataFetcher import DataFetcher
 import MetaTrader5 as mt5
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+
 
 class ForexSignalAnalyzer:
     def __init__(self, data_fetcher, mt5_executor):

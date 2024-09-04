@@ -1,5 +1,6 @@
 import requests
 from time import sleep
+from datetime import datetime, timedelta
 
 class DataFetcher:
     def __init__(self, api_key_polygon, max_retries=3, retry_wait=5):
