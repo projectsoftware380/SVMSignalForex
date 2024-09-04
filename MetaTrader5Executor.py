@@ -103,16 +103,32 @@ class MetaTrader5Executor:
             del self.operaciones_abiertas[symbol]  # Elimina la operación cerrada del monitoreo
         return True  # Retorna True si tiene éxito
 
+    def obtener_posiciones_abiertas(self):
+        """
+        Devuelve todas las posiciones abiertas actualmente.
+        """
+        posiciones = mt5.positions_get()
+        if posiciones is None:
+            print(f"Error obteniendo posiciones abiertas, código de error: {mt5.last_error()}")
+            return []
+        
+        # Convertir las posiciones a un formato manejable (diccionario)
+        posiciones_abiertas = []
+        for posicion in posiciones:
+            posiciones_abiertas.append({
+                'symbol': posicion.symbol,
+                'ticket': posicion.ticket,
+                'type': posicion.type,
+            })
+        return posiciones_abiertas
+
     def monitorear_operaciones(self):
         """
         Monitorea continuamente las operaciones abiertas y aplica las condiciones de cierre.
         """
         while True:
             for symbol, position_id in list(self.operaciones_abiertas.items()):
-                # Aquí se pueden agregar las condiciones de cierre, como cambio de tendencia o reversión
-                # Ejemplo de una simple condición de cierre simulada
                 print(f"Monitoreando operación {symbol} con ID {position_id}")
-                # Si se cumple alguna condición técnica, se puede cerrar la posición
                 # Aquí puedes integrar las condiciones usando las otras clases ForexAnalyzer, etc.
                 
                 # Este bloque es un placeholder para implementar la lógica de cierre
