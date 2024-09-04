@@ -1,4 +1,5 @@
 import time
+import threading
 from ForexAnalyzer import ForexAnalyzer
 from ForexReversalAnalyzer import ForexReversalAnalyzer
 from ForexSignalAnalyzer import ForexSignalAnalyzer
@@ -24,46 +25,83 @@ if not mt5_executor.conectar_mt5():
     print("Error al conectar con MetaTrader 5")
     exit()
 
-# Función para evaluar y operar en los pares seleccionados
-def operar_pares():
+# Función para evaluar la tendencia principal
+def evaluar_tendencias():
+    while True:
+        try:
+            pares_tendencia = {}
+            for pair in config['pairs']:
+                resultado = forex_analyzer.analizar_par(pair)
+                print(f"Tendencia para {pair}: {resultado}")
+                if "Tendencia" in resultado:
+                    pares_tendencia[pair] = resultado
+            
+            # Monitorear las reversiones y generar señales
+            evaluar_reversiones(pares_tendencia)
+
+        except Exception as e:
+            print(f"Error durante la evaluación de tendencias: {str(e)}")
+        time.sleep(config['tendencia_interval'])  # Esperar el intervalo definido antes de la siguiente evaluación
+
+# Función para evaluar las reversiones y generar señales
+def evaluar_reversiones(pares_tendencia):
     try:
-        # 1. Evaluar la tendencia principal (cada 4 horas)
-        pares_tendencia = {}
-        for pair in config['pairs']:
-            resultado = forex_analyzer.analizar_par(pair)
-            print(f"Tendencia para {pair}: {resultado}")
-            if "Tendencia" in resultado:
-                pares_tendencia[pair] = resultado
-        
-        # 2. Monitorear reversiones solo en pares con tendencia clara (cada 15 minutos)
         pares_reversion = forex_reversal_analyzer.analizar_reversiones(pares_tendencia)
         
-        # 3. Generar señales solo en pares con reversión detectada (cada 3 minutos)
+        # Generar señales en los pares con reversiones detectadas
         for pair, reversion in pares_reversion.items():
             if "Reversión" in reversion:
                 resultado_senal = forex_signal_analyzer.analizar_senales({pair: reversion})
                 print(f"Señal para {pair}: {resultado_senal[pair]}")
-        
-        # 4. Monitorear cierres por cambio de tendencia
-        for pair in pares_tendencia:
-            nueva_tendencia = forex_analyzer.analizar_par(pair)
-            if nueva_tendencia != pares_tendencia[pair]:
-                print(f"Cambio de tendencia detectado para {pair}. Cerrando posiciones.")
-                mt5_executor.cerrar_posicion(pair.replace("-", ""))
     except Exception as e:
-        print(f"Error durante la operación de pares: {str(e)}")
+        print(f"Error durante la evaluación de reversiones: {str(e)}")
 
-# Bucle principal en tiempo real
-while True:
+# Función paralela para cerrar posiciones si se detecta cambio de tendencia o reversión contraria
+def monitorear_cierres():
+    while True:
+        try:
+            posiciones_abiertas = mt5_executor.obtener_posiciones_abiertas()  # Método nuevo en MetaTrader5Executor
+            for posicion in posiciones_abiertas:
+                symbol = posicion['symbol']
+                tipo_operacion = posicion['type']
+                print(f"Monitoreando posición abierta en {symbol}")
+
+                # Revisar si la tendencia ha cambiado o si hay una reversión contraria
+                nueva_tendencia = forex_analyzer.analizar_par(symbol.replace("_", "-"))
+                if ("Alcista" in nueva_tendencia and tipo_operacion == mt5.ORDER_TYPE_SELL) or \
+                   ("Bajista" in nueva_tendencia and tipo_operacion == mt5.ORDER_TYPE_BUY) or \
+                   ("Neutral" in nueva_tendencia):
+                    print(f"Cambio de tendencia en {symbol}, cerrando posición.")
+                    mt5_executor.cerrar_posicion(symbol, posicion['ticket'])
+                else:
+                    # Monitorear para una señal contraria
+                    reverso_tendencia = forex_reversal_analyzer.analizar_reversiones({symbol: nueva_tendencia})
+                    if reverso_tendencia:
+                        print(f"Señal contraria detectada en {symbol}, cerrando posición.")
+                        mt5_executor.cerrar_posicion(symbol, posicion['ticket'])
+
+        except Exception as e:
+            print(f"Error durante el monitoreo de cierres: {str(e)}")
+        time.sleep(config['cierre_interval'])  # Intervalo de espera antes de la siguiente evaluación de cierres
+
+# Iniciar hilos paralelos
+def iniciar_hilos():
+    hilo_tendencias = threading.Thread(target=evaluar_tendencias)
+    hilo_cierres = threading.Thread(target=monitorear_cierres)
+
+    hilo_tendencias.start()
+    hilo_cierres.start()
+
+    # Mantener los hilos en ejecución
+    hilo_tendencias.join()
+    hilo_cierres.join()
+
+# Iniciar el proceso
+if __name__ == "__main__":
     try:
-        operar_pares()
-        time.sleep(config['loop_interval'])
+        iniciar_hilos()
     except KeyboardInterrupt:
         print("Proceso interrumpido manualmente.")
-        break
-    except Exception as e:
-        print(f"Error inesperado: {e}")
-        continue  # Opcional: decide si deseas continuar automáticamente o no
-
-# Cerrar conexión a MetaTrader 5 al terminar
-mt5_executor.cerrar_conexion()
+    finally:
+        # Cerrar la conexión con MetaTrader 5 al terminar
+        mt5_executor.cerrar_conexion()
