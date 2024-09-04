@@ -2,7 +2,6 @@ import requests
 import pandas as pd
 import pandas_ta as ta
 from datetime import datetime, timedelta
-
 from DataFetcher import DataFetcher
 
 class ForexAnalyzer:
@@ -100,6 +99,9 @@ class ForexAnalyzer:
             symbol_polygon = pair.replace("-", "")
             df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=60)
 
+            if df.empty:
+                raise ValueError(f"Los datos obtenidos para {symbol_polygon} no son los más recientes o están incompletos.")
+
             tendencia = self.determinar_tendencia(df)
             sentimiento = self.obtener_sentimiento(pair)
 
@@ -142,3 +144,4 @@ if __name__ == "__main__":
     for pair in pairs:
         resultado = analyzer.analizar_par(pair)
         print(resultado)  # Solo imprime el resultado final para cada par de divisas
+

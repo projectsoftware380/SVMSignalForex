@@ -18,6 +18,8 @@ class ForexReversalAnalyzer:
         Se obtienen datos de los últimos 5 días con velas de 15 minutos.
         """
         df = self.data_fetcher.obtener_datos(symbol=symbol, timeframe='minute', range='15', days=5)
+        if df.empty:
+            raise ValueError(f"Los datos obtenidos para {symbol} no son suficientes o están vacíos.")
         return df
 
     def detectar_reversion(self, df, tendencia):
@@ -25,6 +27,9 @@ class ForexReversalAnalyzer:
         Detecta una posible reversión basada en las Bandas de Bollinger y la tendencia actual.
         """
         bollinger = ta.bbands(df['Close'], length=20, std=2)
+        if bollinger is None or 'BBM_20_2.0' not in bollinger:
+            raise ValueError("No se pudo calcular las Bandas de Bollinger.")
+
         df['mid'] = bollinger['BBM_20_2.0']  # Línea central de las Bandas de Bollinger
         precio_actual = df['Close'].iloc[-1]
         linea_central = df['mid'].iloc[-1]
@@ -49,7 +54,7 @@ class ForexReversalAnalyzer:
             return False
 
         # Verificar si el mercado de Forex está abierto
-        if data['currencies']['fx'] == "open":
+        if data.get('currencies', {}).get('fx') == "open":
             return True
         else:
             print("El mercado Forex está cerrado. No se realizarán análisis.")
@@ -99,7 +104,7 @@ class ForexReversalAnalyzer:
                 # Si se detecta una reversión, enviar una solicitud al MetaTrader5Executor
                 self.mt5_executor.procesar_reversion(pair, resultado_reversion)
         except ValueError as e:
-            print(f"Error en el análisis para {pair} - {str(e)}")
+            print(f"Error en el análisis para {pair}: {str(e)}")
 
 
 # Ejemplo de uso

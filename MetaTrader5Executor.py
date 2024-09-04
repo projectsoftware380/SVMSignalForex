@@ -21,9 +21,10 @@ class MetaTrader5Executor:
         """
         posiciones = self.obtener_posiciones_abiertas()
         for posicion in posiciones:
-            symbol = posicion['symbol']
-            position_id = posicion['ticket']
-            self.operaciones_abiertas[symbol] = position_id
+            symbol = posicion.get('symbol')
+            position_id = posicion.get('ticket')
+            if symbol and position_id:
+                self.operaciones_abiertas[symbol] = position_id
         print(f"Sincronización completada: {len(self.operaciones_abiertas)} operaciones sincronizadas.")
 
     def seleccionar_simbolo(self, symbol):
@@ -116,11 +117,11 @@ class MetaTrader5Executor:
         posiciones_abiertas = self.obtener_posiciones_abiertas()
 
         for posicion in posiciones_abiertas:
-            if posicion['symbol'] == symbol:
-                if (posicion['type'] == mt5.ORDER_TYPE_BUY and tipo_operacion == 'sell') or \
-                   (posicion['type'] == mt5.ORDER_TYPE_SELL and tipo_operacion == 'buy'):
+            if posicion.get('symbol') == symbol:
+                if (posicion.get('type') == mt5.ORDER_TYPE_BUY and tipo_operacion == 'sell') or \
+                   (posicion.get('type') == mt5.ORDER_TYPE_SELL and tipo_operacion == 'buy'):
                     print(f"Se detectó una señal contraria para {symbol}, cerrando posición.")
-                    self.cerrar_posicion(symbol, posicion['ticket'])
+                    self.cerrar_posicion(symbol, posicion.get('ticket'))
                     return True
         return False
 
@@ -146,8 +147,8 @@ class MetaTrader5Executor:
         while True:
             posiciones_abiertas = self.obtener_posiciones_abiertas()  # Obtener todas las posiciones abiertas
             for posicion in posiciones_abiertas:
-                symbol = posicion['symbol']
-                position_id = posicion['ticket']
+                symbol = posicion.get('symbol')
+                position_id = posicion.get('ticket')
                 print(f"Monitoreando operación {symbol} con ID {position_id}")
                 tendencia_actual = "Neutral"
                 if tendencia_actual == "Neutral":
