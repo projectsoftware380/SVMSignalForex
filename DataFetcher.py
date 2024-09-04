@@ -66,3 +66,15 @@ class DataFetcher:
             return df_recientes[['Open', 'High', 'Low', 'Close', 'Volume']]
         else:
             raise ValueError(f"No se pudieron obtener datos de la API para {symbol}.")
+
+    def obtener_ultimos_datos(self, symbol):
+        """
+        Obtiene los últimos datos disponibles para un símbolo específico y verifica su frescura.
+        """
+        df = self.obtener_datos(symbol=symbol, timeframe='minute', range='1', days=1)
+        
+        # Validar si los datos son recientes
+        if df.empty:
+            raise ValueError(f"No se obtuvieron datos recientes para {symbol}.")
+        
+        return df

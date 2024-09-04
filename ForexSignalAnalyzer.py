@@ -27,7 +27,7 @@ class ForexSignalAnalyzer:
             return False
 
         # Verificar si el mercado Forex (fx) está abierto
-        if data['currencies']['fx'] == "open":
+        if data.get('currencies', {}).get('fx') == "open":
             return True
         else:
             print("El mercado Forex está cerrado. No se realizarán análisis.")
@@ -38,11 +38,14 @@ class ForexSignalAnalyzer:
         Obtiene datos en un intervalo de 3 minutos desde 5 días antes hasta la fecha actual para calcular el RSI.
         """
         df = self.data_fetcher.obtener_datos(symbol=symbol, timeframe='minute', range='3', days=5)
+        if df.empty:
+            raise ValueError(f"Los datos obtenidos para {symbol} no son suficientes o están vacíos.")
         return df
 
     def verificar_operacion_abierta(self, symbol, tipo):
         """
         Verifica si ya hay una operación abierta con el mismo símbolo y tipo (compra/venta).
+        Esto incluye operaciones abiertas antes de la ejecución del programa.
         """
         positions = mt5.positions_get(symbol=symbol)
         if positions is None:
@@ -112,6 +115,7 @@ class ForexSignalAnalyzer:
                 self.mt5_executor.ejecutar_orden(symbol_polygon, "buy" if "Compra" in resultado_senal else "sell")
         except ValueError as e:
             print(f"Error en el análisis de señales para {pair}: {str(e)}")
+
 
 # Ejemplo de uso
 if __name__ == "__main__":

@@ -5,14 +5,14 @@ import threading
 class MetaTrader5Executor:
     def __init__(self):
         self.conectado = False
-        self.operaciones_abiertas = {}  # Guardar las operaciones activas para un posible monitoreo
+        self.operaciones_abiertas = {}  # Guardar las operaciones activas para monitoreo
 
     def conectar_mt5(self):
         if not mt5.initialize():
             print("Error al conectar con MetaTrader 5, código de error =", mt5.last_error())
             return False
         self.conectado = True
-        self.sincronizar_operaciones_existentes()  # Sincronizar las operaciones al iniciar
+        self.sincronizar_operaciones_existentes()  # Sincronizar operaciones abiertas al iniciar
         return True
 
     def sincronizar_operaciones_existentes(self):
@@ -25,7 +25,7 @@ class MetaTrader5Executor:
             position_id = posicion.get('ticket')
             if symbol and position_id:
                 self.operaciones_abiertas[symbol] = position_id
-        print(f"Sincronización completada: {len(self.operaciones_abiertas)} operaciones sincronizadas.")
+        print(f"Sincronización completada: {len(self.operaciones_abiertas)} operaciones preexistentes sincronizadas.")
 
     def seleccionar_simbolo(self, symbol):
         symbol_info = mt5.symbol_info(symbol)
@@ -144,19 +144,27 @@ class MetaTrader5Executor:
         return lista_posiciones
 
     def monitorear_operaciones(self):
+        """
+        Monitorea todas las operaciones abiertas, tanto preexistentes como nuevas,
+        para cerrar las que no cumplen con las condiciones.
+        """
         while True:
             posiciones_abiertas = self.obtener_posiciones_abiertas()  # Obtener todas las posiciones abiertas
             for posicion in posiciones_abiertas:
                 symbol = posicion.get('symbol')
                 position_id = posicion.get('ticket')
                 print(f"Monitoreando operación {symbol} con ID {position_id}")
-                tendencia_actual = "Neutral"
+                # Implementar lógica de análisis de tendencia o reversión para cerrar la posición si es necesario
+                tendencia_actual = "Neutral"  # Esto sería reemplazado por la lógica real de análisis
                 if tendencia_actual == "Neutral":
                     print(f"Cerrando posición para {symbol} debido a cambio de tendencia a Neutral.")
                     self.cerrar_posicion(symbol, position_id)
-            time.sleep(60)
+            time.sleep(60)  # Intervalo de monitoreo
 
     def iniciar_monitoreo(self):
+        """
+        Inicia el monitoreo de operaciones en un hilo separado.
+        """
         thread = threading.Thread(target=self.monitorear_operaciones)
         thread.daemon = True
         thread.start()

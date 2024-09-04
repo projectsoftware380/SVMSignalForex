@@ -68,7 +68,7 @@ def evaluar_reversiones(pares_tendencia):
         
         # Generar señales en los pares con reversiones detectadas
         for pair, reversion in pares_reversion.items():
-            if isinstance(reversion, dict) and "Reversión" in reversion:
+            if isinstance(reversion, str) and "Reversión" in reversion:
                 resultado_senal = forex_signal_analyzer.analizar_senales({pair: reversion})
                 print(f"Señal para {pair}: {resultado_senal[pair]}")
             else:
@@ -85,7 +85,7 @@ def monitorear_cierres():
             continue
 
         try:
-            posiciones_abiertas = mt5_executor.obtener_posiciones_abiertas()  # Método nuevo en MetaTrader5Executor
+            posiciones_abiertas = mt5_executor.obtener_posiciones_abiertas()  # Método en MetaTrader5Executor
             for posicion in posiciones_abiertas:
                 symbol = posicion['symbol']
                 tipo_operacion = posicion['type']
@@ -101,7 +101,7 @@ def monitorear_cierres():
                 else:
                     # Monitorear para una señal contraria
                     reverso_tendencia = forex_reversal_analyzer.analizar_reversiones({symbol: nueva_tendencia})
-                    if reverso_tendencia:
+                    if reverso_tendencia and isinstance(reverso_tendencia, dict):
                         print(f"Señal contraria detectada en {symbol}, cerrando posición.")
                         mt5_executor.cerrar_posicion(symbol, posicion['ticket'])
 
