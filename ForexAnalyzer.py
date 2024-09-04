@@ -118,4 +118,3 @@ if __name__ == "__main__":
     for pair in pairs:
         resultado = analyzer.analizar_par(pair)
         print(resultado)  # Solo imprime el resultado final para cada par de divisas
-

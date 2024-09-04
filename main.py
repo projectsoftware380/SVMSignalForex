@@ -5,6 +5,7 @@ from ForexReversalAnalyzer import ForexReversalAnalyzer
 from ForexSignalAnalyzer import ForexSignalAnalyzer
 from MetaTrader5Executor import MetaTrader5Executor
 from DataFetcher import DataFetcher
+import requests
 import json
 
 # Cargar configuración desde un archivo JSON
@@ -23,16 +24,39 @@ data_fetcher = DataFetcher(config['api_key_polygon'])
 mt5_executor = MetaTrader5Executor()  # Crear instancia del ejecutor de MT5
 forex_analyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'])
 forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor)
-forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor)  # Pasar el ejecutor de MT5
+forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])  # Pasar el ejecutor de MT5
 
 # Conectar MetaTrader 5
 if not mt5_executor.conectar_mt5():
     print("Error al conectar con MetaTrader 5")
     exit()
 
+def verificar_estado_mercado():
+    """
+    Verifica si el mercado Forex está abierto utilizando la API de Polygon.io.
+    """
+    url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={config['api_key_polygon']}"
+    response = requests.get(url)
+    data = response.json()
+
+    if response.status_code != 200:
+        print(f"Error al verificar el estado del mercado: {response.status_code}")
+        return False
+
+    # Verificar si el mercado Forex está abierto
+    if data['fx'] == "open":
+        return True
+    else:
+        print("El mercado Forex está cerrado. No se realizarán análisis.")
+        return False
+
 # Función para evaluar la tendencia principal
 def evaluar_tendencias():
     while True:
+        if not verificar_estado_mercado():
+            time.sleep(tendencia_interval)
+            continue  # Si el mercado está cerrado, se salta la evaluación
+
         try:
             pares_tendencia = {}
             for pair in config['pairs']:
@@ -64,6 +88,10 @@ def evaluar_reversiones(pares_tendencia):
 # Función paralela para cerrar posiciones si se detecta cambio de tendencia o reversión contraria
 def monitorear_cierres():
     while True:
+        if not verificar_estado_mercado():
+            time.sleep(cierre_interval)
+            continue  # Si el mercado está cerrado, no se realiza monitoreo de cierres
+
         try:
             posiciones_abiertas = mt5_executor.obtener_posiciones_abiertas()  # Método nuevo en MetaTrader5Executor
             for posicion in posiciones_abiertas:

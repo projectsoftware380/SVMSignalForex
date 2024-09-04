@@ -1,3 +1,4 @@
+import requests
 import pandas as pd
 import pandas_ta as ta
 from DataFetcher import DataFetcher
@@ -7,10 +8,30 @@ from datetime import datetime, timedelta
 
 
 class ForexSignalAnalyzer:
-    def __init__(self, data_fetcher, mt5_executor):
+    def __init__(self, data_fetcher, mt5_executor, api_key_polygon):
         self.data_fetcher = data_fetcher
         self.mt5_executor = mt5_executor  # Instancia del ejecutor de MetaTrader 5
+        self.api_key_polygon = api_key_polygon  # API Key para Polygon.io
         self.executor = ThreadPoolExecutor(max_workers=5)  # Manejar señales de múltiples pares en paralelo
+
+    def verificar_estado_mercado(self):
+        """
+        Verifica si el mercado Forex está abierto utilizando la API de Polygon.io.
+        """
+        url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
+        response = requests.get(url)
+        data = response.json()
+
+        if response.status_code != 200:
+            print(f"Error al verificar el estado del mercado: {response.status_code}")
+            return False
+
+        # Verificar si el mercado Forex está abierto
+        if data['fx'] == "open":
+            return True
+        else:
+            print("El mercado Forex está cerrado. No se realizarán análisis.")
+            return False
 
     def obtener_datos_rsi(self, symbol):
         """
@@ -58,7 +79,11 @@ class ForexSignalAnalyzer:
         """
         Analiza las señales de trading para los pares en los que se detectaron reversiones de tendencia.
         Ahora funciona en paralelo para manejar la ejecución simultánea de señales.
+        Solo se ejecuta si el mercado Forex está abierto.
         """
+        if not self.verificar_estado_mercado():
+            return {}  # Detener si el mercado está cerrado
+
         resultados = {}
         futures = []  # Lista para almacenar las tareas de los hilos
 
@@ -94,7 +119,7 @@ if __name__ == "__main__":
     
     data_fetcher = DataFetcher(api_key_polygon)
     mt5_executor = MetaTrader5Executor()  # Instancia de MetaTrader5Executor para manejar órdenes
-    signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor)
+    signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, api_key_polygon)
 
     pares_reversiones = {
         "GBP-USD": "Reversión Alcista Detectada",
@@ -105,3 +130,4 @@ if __name__ == "__main__":
     }
 
     resultados_senales = signal_analyzer.analizar_senales(pares_reversiones)
+

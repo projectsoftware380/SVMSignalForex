@@ -1,12 +1,14 @@
+import requests
 import pandas as pd
 import pandas_ta as ta
 from DataFetcher import DataFetcher
 from concurrent.futures import ThreadPoolExecutor
 
 class ForexReversalAnalyzer:
-    def __init__(self, data_fetcher, mt5_executor):
+    def __init__(self, data_fetcher, mt5_executor, api_key_polygon):
         self.data_fetcher = data_fetcher
         self.mt5_executor = mt5_executor
+        self.api_key_polygon = api_key_polygon
         self.executor = ThreadPoolExecutor(max_workers=5)  # Para manejar el procesamiento paralelo
 
     def obtener_datos_bollinger(self, symbol):
@@ -33,11 +35,33 @@ class ForexReversalAnalyzer:
         else:
             return None  # Si no se detecta reversión
 
+    def verificar_estado_mercado(self):
+        """
+        Verifica si el mercado Forex está abierto utilizando la API de Polygon.io.
+        """
+        url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
+        response = requests.get(url)
+        data = response.json()
+
+        if response.status_code != 200:
+            print(f"Error al verificar el estado del mercado: {response.status_code}")
+            return False
+
+        # Verificar si el mercado de Forex está abierto
+        if data['fx'] == "open":
+            return True
+        else:
+            print("El mercado Forex está cerrado. No se realizarán análisis.")
+            return False
+
     def analizar_reversiones(self, pares_tendencia):
         """
         Analiza los pares de divisas en tendencia para detectar posibles reversiones.
-        Ahora se ejecuta de forma multihilo para manejar el análisis de varias divisas en paralelo.
+        Solo se ejecuta si el mercado está abierto.
         """
+        if not self.verificar_estado_mercado():
+            return {}  # Detener la ejecución si el mercado está cerrado
+
         resultados = {}
         futures = []  # Almacenar las tareas de los hilos
 
@@ -72,7 +96,7 @@ class ForexReversalAnalyzer:
             if resultado_reversion:
                 resultados[pair] = resultado_reversion
                 # Si se detecta una reversión, enviar una solicitud al MetaTrader5Executor
-                self.mt5_executor.procesar_reversion(pair, resultado_reversion)  # Nuevo método en MetaTrader5Executor
+                self.mt5_executor.procesar_reversion(pair, resultado_reversion)
         except ValueError as e:
             print(f"Error en el análisis para {pair} - {str(e)}")
 
@@ -88,7 +112,7 @@ if __name__ == "__main__":
     mt5_executor = MetaTrader5Executor()
 
     # Instancia de ForexReversalAnalyzer utilizando DataFetcher y MetaTrader5Executor
-    reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor)
+    reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, api_key_polygon)
 
     # Ejemplo de pares en tendencia desde ForexAnalyzer (Simulado)
     pares_en_tendencia = {
@@ -106,4 +130,3 @@ if __name__ == "__main__":
 
     # Analizar reversiones en paralelo
     resultados_reversiones = reversal_analyzer.analizar_reversiones(pares_en_tendencia)
-
