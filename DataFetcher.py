@@ -8,7 +8,7 @@ class DataFetcher:
 
     def obtener_estado_mercado(self):
         """
-        Verifica si el mercado de divisas (forex) está abierto a través de la API de Polygon.
+        Verifica si el mercado de divisas (forex) está abierto a través de la API de Polygon.io.
         """
         url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
         response = requests.get(url)
@@ -16,7 +16,7 @@ class DataFetcher:
             raise ValueError(f"Error al obtener el estado del mercado: {response.status_code}")
         
         market_status = response.json()
-        if 'fx' in market_status and market_status['fx'] == "open":
+        if 'currencies' in market_status and market_status['currencies']['fx'] == "open":
             return True
         return False
 

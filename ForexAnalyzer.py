@@ -6,10 +6,30 @@ from datetime import datetime, timedelta
 from DataFetcher import DataFetcher
 
 class ForexAnalyzer:
-    def __init__(self, data_fetcher, api_token_forexnews):
+    def __init__(self, data_fetcher, api_token_forexnews, api_key_polygon):
         self.data_fetcher = data_fetcher
         self.api_token_forexnews = api_token_forexnews
+        self.api_key_polygon = api_key_polygon
         self.last_trend = {}  # Almacena la última tendencia de cada par
+
+    def verificar_estado_mercado(self):
+        """
+        Verifica si el mercado Forex está abierto utilizando la API de Polygon.io.
+        """
+        url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
+        response = requests.get(url)
+        data = response.json()
+
+        if response.status_code != 200:
+            print(f"Error al verificar el estado del mercado: {response.status_code}")
+            return False
+
+        # Verificar si el mercado de Forex está abierto
+        if data['currencies']['fx'] == "open":
+            return True
+        else:
+            print("El mercado Forex está cerrado. No se realizarán análisis.")
+            return False
 
     def calcular_sma(self, series, length):
         if len(series) < length:
@@ -72,6 +92,10 @@ class ForexAnalyzer:
         """
         Analiza el par de divisas para determinar la tendencia y sentimiento.
         """
+        # Verificar si el mercado Forex está abierto
+        if not self.verificar_estado_mercado():
+            return f"{pair}: El mercado está cerrado. No se realizó análisis."
+
         try:
             symbol_polygon = pair.replace("-", "")
             df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=60)
@@ -111,7 +135,7 @@ if __name__ == "__main__":
     
     data_fetcher = DataFetcher(api_key_polygon)
     
-    analyzer = ForexAnalyzer(data_fetcher, api_token_forexnews)
+    analyzer = ForexAnalyzer(data_fetcher, api_token_forexnews, api_key_polygon)
     
     pairs = ["GBP-USD", "USD-CHF", "USD-JPY", "GBP-CAD", "USD-CAD"]
     

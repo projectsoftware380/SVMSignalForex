@@ -26,8 +26,8 @@ class ForexSignalAnalyzer:
             print(f"Error al verificar el estado del mercado: {response.status_code}")
             return False
 
-        # Verificar si el mercado Forex está abierto
-        if data['fx'] == "open":
+        # Verificar si el mercado Forex (fx) está abierto
+        if data['currencies']['fx'] == "open":
             return True
         else:
             print("El mercado Forex está cerrado. No se realizarán análisis.")
@@ -130,4 +130,3 @@ if __name__ == "__main__":
     }
 
     resultados_senales = signal_analyzer.analizar_senales(pares_reversiones)
-

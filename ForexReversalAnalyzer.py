@@ -1,8 +1,9 @@
 import requests
 import pandas as pd
 import pandas_ta as ta
-from DataFetcher import DataFetcher
 from concurrent.futures import ThreadPoolExecutor
+from DataFetcher import DataFetcher  # Importar solo lo necesario
+from MetaTrader5Executor import MetaTrader5Executor  # Asegurarse de importar correctamente
 
 class ForexReversalAnalyzer:
     def __init__(self, data_fetcher, mt5_executor, api_key_polygon):
@@ -48,7 +49,7 @@ class ForexReversalAnalyzer:
             return False
 
         # Verificar si el mercado de Forex está abierto
-        if data['fx'] == "open":
+        if data['currencies']['fx'] == "open":
             return True
         else:
             print("El mercado Forex está cerrado. No se realizarán análisis.")
@@ -100,6 +101,7 @@ class ForexReversalAnalyzer:
         except ValueError as e:
             print(f"Error en el análisis para {pair} - {str(e)}")
 
+
 # Ejemplo de uso
 if __name__ == "__main__":
     api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"  # Reemplaza con tu clave API
@@ -108,7 +110,6 @@ if __name__ == "__main__":
     data_fetcher = DataFetcher(api_key_polygon)
 
     # Instancia de MetaTrader5Executor (debería ser multihilo)
-    from MetaTrader5Executor import MetaTrader5Executor
     mt5_executor = MetaTrader5Executor()
 
     # Instancia de ForexReversalAnalyzer utilizando DataFetcher y MetaTrader5Executor
