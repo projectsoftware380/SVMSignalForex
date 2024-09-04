@@ -2,8 +2,8 @@
     "api_key_polygon": "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR",
     "api_token_forexnews": "25wpwpebrawmafmvjuagciubjoylthzaybzvbtqk",
     "loop_interval": 60,
-    "tendencia_interval": 300,  // Intervalo para evaluar las tendencias (en segundos)
-    "cierre_interval": 180,     // Intervalo para evaluar el cierre de posiciones (en segundos)
+    "tendencia_interval": 300,
+    "cierre_interval": 180,
     "pairs": ["XAU-USD", "EUR-USD", "GBP-USD", "USD-JPY", "AUD-USD", "XAG-USD", "USD-CAD", "NZD-USD", "EUR-GBP", "USD-CHF", "USD-CNH", "USD-INR", "GBP-JPY", "GBP-AUD", "EUR-JPY", "EUR-CHF", "AUD-JPY", "EUR-AUD", "GBP-CAD", "GBP-EUR", "GBP-CHF", "GBP-NZD", "USD-TRY", "AUD-NZD", "NZD-JPY", "GBP-INR", "CAD-JPY", "USD-SGD"],
     "lot_size": 0.1,
     "stop_loss_multiplier": 2,
