@@ -132,7 +132,10 @@ class MetaTrader5Executor:
 
     def monitorear_operaciones(self):
         while True:
-            for symbol, position_id in list(self.operaciones_abiertas.items()):
+            posiciones_abiertas = self.obtener_posiciones_abiertas()  # Obtener todas las posiciones abiertas
+            for posicion in posiciones_abiertas:
+                symbol = posicion['symbol']
+                position_id = posicion['ticket']
                 print(f"Monitoreando operación {symbol} con ID {position_id}")
                 tendencia_actual = "Neutral"
                 if tendencia_actual == "Neutral":
