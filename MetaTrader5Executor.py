@@ -7,6 +7,12 @@ class MetaTrader5Executor:
         self.operaciones_abiertas = {}  # Guardar las operaciones activas para monitoreo
         self.close_conditions = close_conditions  # Instancia de la clase TradeCloseConditions
 
+    def estandarizar_simbolo(self, symbol):
+        """
+        Estandariza el formato del símbolo, removiendo guiones.
+        """
+        return symbol.replace("-", "")
+
     def conectar_mt5(self):
         print("Intentando conectar con MetaTrader 5...")
         if not mt5.initialize():
@@ -26,9 +32,9 @@ class MetaTrader5Executor:
         if isinstance(posiciones, list):
             print(f"Lista de posiciones abiertas procesada: {posiciones}")
             for posicion in posiciones:
-                print(f"Procesando posición: {posicion}")
-                symbol = posicion['symbol']
+                symbol = self.estandarizar_simbolo(posicion['symbol'])  # Estandarizar símbolo
                 position_id = posicion['ticket']
+                print(f"Procesando posición: {posicion}")
                 if symbol and position_id:
                     self.operaciones_abiertas[symbol] = position_id
                     print(f"Operación sincronizada: {symbol}, ID: {position_id}")
@@ -36,12 +42,13 @@ class MetaTrader5Executor:
             print(f"Error: Se esperaba una lista de posiciones, pero se recibió {type(posiciones)}")
 
     def seleccionar_simbolo(self, symbol):
-        symbol_info = mt5.symbol_info(symbol)
+        symbol_estandarizado = self.estandarizar_simbolo(symbol)
+        symbol_info = mt5.symbol_info(symbol_estandarizado)
         if symbol_info is None:
             return False
         
         if not symbol_info.visible:
-            if not mt5.symbol_select(symbol, True):
+            if not mt5.symbol_select(symbol_estandarizado, True):
                 return False
         return True
 
@@ -55,14 +62,15 @@ class MetaTrader5Executor:
         if not self.seleccionar_simbolo(symbol):
             return
 
+        symbol_estandarizado = self.estandarizar_simbolo(symbol)
         lot = 0.1
-        price = mt5.symbol_info_tick(symbol).ask if order_type == "buy" else mt5.symbol_info_tick(symbol).bid
+        price = mt5.symbol_info_tick(symbol_estandarizado).ask if order_type == "buy" else mt5.symbol_info_tick(symbol_estandarizado).bid
         deviation = 20
         order_type_mt5 = mt5.ORDER_TYPE_BUY if order_type == "buy" else mt5.ORDER_TYPE_SELL
 
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
+            "symbol": symbol_estandarizado,
             "volume": lot,
             "type": order_type_mt5,
             "price": price,
@@ -75,11 +83,11 @@ class MetaTrader5Executor:
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
             return None
-        self.operaciones_abiertas[symbol] = result.order
+        self.operaciones_abiertas[symbol_estandarizado] = result.order
         
         # Después de la ejecución, ajustar SL y TP
-        print(f"Orden ejecutada para {symbol} con precio {result.price}. Ajustando SL y TP...")
-        self.ajustar_stop_loss_take_profit(symbol, result.order, result.price, order_type)
+        print(f"Orden ejecutada para {symbol_estandarizado} con precio {result.price}. Ajustando SL y TP...")
+        self.ajustar_stop_loss_take_profit(symbol_estandarizado, result.order, result.price, order_type)
 
         return result.order
 
@@ -87,46 +95,41 @@ class MetaTrader5Executor:
         """
         Ajusta el Stop Loss y el Take Profit basados en el precio de ejecución.
         """
-        # Ejemplo de cómo obtener los valores de SL y TP desde un archivo config.json
-        # Suponiendo que `self.config` tiene estos valores cargados
-        stop_loss_factor = 1.5  # Ejemplo: 1.5 veces el ATR (se puede ajustar dinámicamente)
+        symbol_estandarizado = self.estandarizar_simbolo(symbol)
+        stop_loss_factor = 1.5  # Ejemplo: 1.5 veces el ATR
         take_profit_factor = 3.0  # Ejemplo: 3 veces el ATR
 
-        atr_value = self.calcular_atr(symbol)  # Supongamos que tienes una función para calcular el ATR
+        atr_value = self.calcular_atr(symbol_estandarizado)
 
         if atr_value is None:
-            print(f"No se pudo calcular el ATR para {symbol}, no se ajustarán SL y TP.")
+            print(f"No se pudo calcular el ATR para {symbol_estandarizado}, no se ajustarán SL y TP.")
             return
 
-        # Calcular los niveles de SL y TP
         stop_loss = precio_ejecucion - (atr_value * stop_loss_factor) if order_type == "buy" else precio_ejecucion + (atr_value * stop_loss_factor)
         take_profit = precio_ejecucion + (atr_value * take_profit_factor) if order_type == "buy" else precio_ejecucion - (atr_value * take_profit_factor)
 
-        print(f"Ajustando Stop Loss a {stop_loss} y Take Profit a {take_profit} para {symbol}")
+        print(f"Ajustando Stop Loss a {stop_loss} y Take Profit a {take_profit} para {symbol_estandarizado}")
 
-        # Enviar la modificación para ajustar el SL y TP
         request = {
             "action": mt5.TRADE_ACTION_SLTP,
             "position": position_id,
-            "symbol": symbol,
+            "symbol": symbol_estandarizado,
             "sl": stop_loss,
             "tp": take_profit,
         }
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-            print(f"Error al ajustar SL y TP para {symbol}")
+            print(f"Error al ajustar SL y TP para {symbol_estandarizado}")
         else:
-            print(f"SL y TP ajustados correctamente para {symbol}")
+            print(f"SL y TP ajustados correctamente para {symbol_estandarizado}")
 
     def cerrar_posicion(self, symbol, position_id):
-        if not self.conectado:
-            return
-        
-        price = mt5.symbol_info_tick(symbol).bid
+        symbol_estandarizado = self.estandarizar_simbolo(symbol)
+        price = mt5.symbol_info_tick(symbol_estandarizado).bid
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "position": position_id,
-            "symbol": symbol,
+            "symbol": symbol_estandarizado,
             "volume": 0.1,
             "type": mt5.ORDER_TYPE_SELL,
             "price": price,
@@ -139,8 +142,8 @@ class MetaTrader5Executor:
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
             return False
-        if symbol in self.operaciones_abiertas:
-            del self.operaciones_abiertas[symbol]
+        if symbol_estandarizado in self.operaciones_abiertas:
+            del self.operaciones_abiertas[symbol_estandarizado]
         return True
 
     def obtener_posiciones_abiertas(self):
@@ -154,7 +157,7 @@ class MetaTrader5Executor:
         lista_posiciones = []
         for posicion in posiciones:
             posicion_diccionario = {
-                'symbol': posicion.symbol,
+                'symbol': self.estandarizar_simbolo(posicion.symbol),
                 'ticket': posicion.ticket,
                 'type': posicion.type
             }
@@ -176,14 +179,12 @@ class MetaTrader5Executor:
                 return
             
             for posicion in posiciones:
-                print(f"Revisando posición: {posicion}")
                 symbol = posicion.get('symbol')
                 position_id = posicion.get('ticket')
-                tendencia_actual = "Tendencia actual placeholder"  # Esto sería un resultado real de ForexAnalyzer
-                reverso_tendencia = "Reversión placeholder"  # Esto sería un resultado real de ForexReversalAnalyzer
-                signal = "Señal placeholder"  # Esto sería un resultado real de ForexSignalAnalyzer
+                tendencia_actual = "Tendencia actual placeholder"
+                reverso_tendencia = "Reversión placeholder"
+                signal = "Señal placeholder"
 
-                # Verificar las condiciones de cierre usando la clase TradeCloseConditions
                 if self.close_conditions.verificar_cierre_por_condiciones(symbol, tendencia_actual, reverso_tendencia, signal):
                     print(f"Condiciones de cierre válidas para {symbol}, procediendo a cerrar la posición.")
                     self.cerrar_posicion(symbol, position_id)
@@ -204,8 +205,6 @@ class MetaTrader5Executor:
 
     def calcular_atr(self, symbol):
         """
-        Aquí deberías implementar la lógica para calcular el ATR del símbolo.
+        Implementa la lógica para calcular el ATR del símbolo.
         """
-        # Esta función debería devolver el valor del ATR calculado.
-        # Por ahora devolveremos un valor de ejemplo para pruebas.
         return 0.0015  # Valor de ejemplo

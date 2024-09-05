@@ -4,7 +4,7 @@ from ForexAnalyzer import ForexAnalyzer
 from ForexReversalAnalyzer import ForexReversalAnalyzer
 from ForexSignalAnalyzer import ForexSignalAnalyzer
 from MetaTrader5Executor import MetaTrader5Executor
-from TradeCloseConditions import TradeCloseConditions  # Importamos la nueva clase
+from TradeCloseConditions import TradeCloseConditions
 from DataFetcher import DataFetcher
 import json
 
@@ -20,12 +20,19 @@ cierre_interval: int = config.get('cierre_interval', 180)
 # Crear una instancia de DataFetcher
 data_fetcher: DataFetcher = DataFetcher(config['api_key_polygon'])
 
-# Instanciar las clases necesarias
-close_conditions = TradeCloseConditions()  # Instancia de TradeCloseConditions
-mt5_executor = MetaTrader5Executor(close_conditions)  # Pasamos la instancia a MetaTrader5Executor
-forex_analyzer: ForexAnalyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'], config['api_key_polygon'])
-forex_reversal_analyzer: ForexReversalAnalyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
-forex_signal_analyzer: ForexSignalAnalyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
+# Instanciar MetaTrader5Executor sin close_conditions
+mt5_executor = MetaTrader5Executor(None)  # Pasar None por ahora
+
+# Instanciar TradeCloseConditions con mt5_executor
+close_conditions = TradeCloseConditions(mt5_executor)
+
+# Ahora asignar close_conditions a MetaTrader5Executor
+mt5_executor.close_conditions = close_conditions
+
+# Instanciar las demás clases
+forex_analyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'], config['api_key_polygon'])
+forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
+forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
 
 # Conectar MetaTrader 5
 if not mt5_executor.conectar_mt5():
@@ -119,4 +126,3 @@ if __name__ == "__main__":
         print("Proceso interrumpido manualmente.")
     finally:
         mt5_executor.cerrar_conexion()
-
