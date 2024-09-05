@@ -22,8 +22,8 @@ data_fetcher = DataFetcher(config['api_key_polygon'])
 # Instanciar las clases necesarias
 mt5_executor = MetaTrader5Executor()  # Crear instancia del ejecutor de MT5
 forex_analyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'], config['api_key_polygon'])
-forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])  # Pasar el API key
-forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])  # Pasar el API key
+forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
+forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
 
 # Conectar MetaTrader 5
 if not mt5_executor.conectar_mt5():
@@ -70,7 +70,7 @@ def evaluar_reversiones(pares_tendencia):
         for pair, reversion in pares_reversion.items():
             if isinstance(reversion, str) and "Reversión" in reversion:
                 resultado_senal = forex_signal_analyzer.analizar_senales({pair: reversion})
-                print(f"Señal para {pair}: {resultado_senal[pair]}")
+                print(f"Señal para {pair}: {resultado_senal.get(pair, 'Sin señal detectada')}")
             else:
                 print(f"Formato inesperado de datos en {pair}: {reversion}")
     except Exception as e:
@@ -101,7 +101,7 @@ def monitorear_cierres():
                 else:
                     # Monitorear para una señal contraria
                     reverso_tendencia = forex_reversal_analyzer.analizar_reversiones({symbol: nueva_tendencia})
-                    if reverso_tendencia and isinstance(reverso_tendencia, dict):
+                    if isinstance(reverso_tendencia, dict) and symbol in reverso_tendencia:
                         print(f"Señal contraria detectada en {symbol}, cerrando posición.")
                         mt5_executor.cerrar_posicion(symbol, posicion['ticket'])
 

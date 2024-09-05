@@ -25,6 +25,7 @@ class MetaTrader5Executor:
             position_id = posicion.get('ticket')
             if symbol and position_id:
                 self.operaciones_abiertas[symbol] = position_id
+                print(f"Operación preexistente sincronizada: {symbol}, ID: {position_id}")
         print(f"Sincronización completada: {len(self.operaciones_abiertas)} operaciones preexistentes sincronizadas.")
 
     def seleccionar_simbolo(self, symbol):

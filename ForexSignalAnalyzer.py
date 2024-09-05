@@ -6,7 +6,6 @@ import MetaTrader5 as mt5
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
-
 class ForexSignalAnalyzer:
     def __init__(self, data_fetcher, mt5_executor, api_key_polygon):
         self.data_fetcher = data_fetcher
@@ -115,22 +114,3 @@ class ForexSignalAnalyzer:
                 self.mt5_executor.ejecutar_orden(symbol_polygon, "buy" if "Compra" in resultado_senal else "sell")
         except ValueError as e:
             print(f"Error en el análisis de señales para {pair}: {str(e)}")
-
-
-# Ejemplo de uso
-if __name__ == "__main__":
-    api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"
-    
-    data_fetcher = DataFetcher(api_key_polygon)
-    mt5_executor = MetaTrader5Executor()  # Instancia de MetaTrader5Executor para manejar órdenes
-    signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, api_key_polygon)
-
-    pares_reversiones = {
-        "GBP-USD": "Reversión Alcista Detectada",
-        "USD-CHF": "Reversión Bajista Detectada",
-        "USD-JPY": "Neutral",
-        "GBP-CAD": "Reversión Alcista Detectada",
-        "USD-CAD": "Reversión Bajista Detectada"
-    }
-
-    resultados_senales = signal_analyzer.analizar_senales(pares_reversiones)

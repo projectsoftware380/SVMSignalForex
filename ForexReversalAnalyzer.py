@@ -100,12 +100,16 @@ class ForexReversalAnalyzer:
             df = self.obtener_datos_bollinger(symbol_polygon)
             resultado_reversion = self.detectar_reversion(df, tendencia_simple)
             if resultado_reversion:
-                resultados[pair] = resultado_reversion
+                if isinstance(resultados, dict):
+                    resultados[pair] = resultado_reversion
+                else:
+                    raise TypeError(f"Se esperaba un diccionario para almacenar los resultados, pero se recibió: {type(resultados)}")
                 # Si se detecta una reversión, enviar una solicitud al MetaTrader5Executor
                 self.mt5_executor.procesar_reversion(pair, resultado_reversion)
         except ValueError as e:
             print(f"Error en el análisis para {pair}: {str(e)}")
-
+        except TypeError as e:
+            print(f"Error de tipo en {pair}: {str(e)}")
 
 # Ejemplo de uso
 if __name__ == "__main__":
