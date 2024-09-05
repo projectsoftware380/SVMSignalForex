@@ -1,12 +1,10 @@
 import MetaTrader5 as mt5
 import threading
-from TradeCloseConditions import TradeCloseConditions  # Importamos la clase TradeCloseConditions
 
 class MetaTrader5Executor:
     def __init__(self):
         self.conectado = False
         self.operaciones_abiertas = {}  # Guardar las operaciones activas para monitoreo
-        self.trade_close_conditions = TradeCloseConditions()  # Instancia de la clase TradeCloseConditions
 
     def conectar_mt5(self):
         print("Intentando conectar con MetaTrader 5...")
@@ -47,6 +45,9 @@ class MetaTrader5Executor:
         return True
 
     def ejecutar_orden(self, symbol, order_type):
+        """
+        Ejecuta la orden de compra o venta y luego ajusta el SL y TP basados en el precio de ejecución.
+        """
         if not self.conectado:
             return
         
@@ -74,7 +75,47 @@ class MetaTrader5Executor:
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
             return None
         self.operaciones_abiertas[symbol] = result.order
+        
+        # Después de la ejecución, ajustar SL y TP
+        print(f"Orden ejecutada para {symbol} con precio {result.price}. Ajustando SL y TP...")
+        self.ajustar_stop_loss_take_profit(symbol, result.order, result.price, order_type)
+
         return result.order
+
+    def ajustar_stop_loss_take_profit(self, symbol, position_id, precio_ejecucion, order_type):
+        """
+        Ajusta el Stop Loss y el Take Profit basados en el precio de ejecución.
+        """
+        # Ejemplo de cómo obtener los valores de SL y TP desde un archivo config.json
+        # Suponiendo que `self.config` tiene estos valores cargados
+        stop_loss_factor = 1.5  # Ejemplo: 1.5 veces el ATR (se puede ajustar dinámicamente)
+        take_profit_factor = 3.0  # Ejemplo: 3 veces el ATR
+
+        atr_value = self.calcular_atr(symbol)  # Supongamos que tienes una función para calcular el ATR
+
+        if atr_value is None:
+            print(f"No se pudo calcular el ATR para {symbol}, no se ajustarán SL y TP.")
+            return
+
+        # Calcular los niveles de SL y TP
+        stop_loss = precio_ejecucion - (atr_value * stop_loss_factor) if order_type == "buy" else precio_ejecucion + (atr_value * stop_loss_factor)
+        take_profit = precio_ejecucion + (atr_value * take_profit_factor) if order_type == "buy" else precio_ejecucion - (atr_value * take_profit_factor)
+
+        print(f"Ajustando Stop Loss a {stop_loss} y Take Profit a {take_profit} para {symbol}")
+
+        # Enviar la modificación para ajustar el SL y TP
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": position_id,
+            "symbol": symbol,
+            "sl": stop_loss,
+            "tp": take_profit,
+        }
+        result = mt5.order_send(request)
+        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            print(f"Error al ajustar SL y TP para {symbol}")
+        else:
+            print(f"SL y TP ajustados correctamente para {symbol}")
 
     def cerrar_posicion(self, symbol, position_id):
         if not self.conectado:
@@ -148,16 +189,10 @@ class MetaTrader5Executor:
                 position_id = posicion.get('ticket')
                 print(f"Revisando posición para {symbol} con ID {position_id}")
                 
-                # Verificar las condiciones de cierre usando la clase TradeCloseConditions
-                tendencia_actual = self.obtener_tendencia_actual(symbol)  # Esta función debe obtener la tendencia actual
-                reverso_tendencia = self.obtener_reverso_tendencia(symbol)  # Función para obtener reversión
-                signal = self.obtener_signal(symbol)  # Función para obtener señal de trading
-
-                if self.trade_close_conditions.verificar_cierre_por_condiciones(symbol, tendencia_actual, reverso_tendencia, signal):
-                    print(f"Condiciones de cierre válidas para {symbol}, procediendo a cerrar la posición.")
-                    self.cerrar_posicion(symbol, position_id)
-                else:
-                    print(f"Condiciones de cierre no válidas o incompletas para {symbol}, no se cierra la posición.")
+                # Aquí se puede agregar la lógica para cerrar posiciones si se cumplen ciertos criterios.
+                # Ejemplo:
+                # if self.debe_cerrar_posicion(symbol, position_id):
+                #     self.cerrar_posicion(symbol, position_id)
 
         except Exception as e:
             print(f"Error durante el monitoreo de cierres: {str(e)}")
@@ -171,17 +206,10 @@ class MetaTrader5Executor:
         mt5.shutdown()
         self.conectado = False
 
-    # Placeholder para obtener la tendencia actual
-    def obtener_tendencia_actual(self, symbol):
-        # Implementar la lógica para obtener la tendencia actual
-        return "Neutral"  # Placeholder
-
-    # Placeholder para obtener la reversión de tendencia
-    def obtener_reverso_tendencia(self, symbol):
-        # Implementar la lógica para obtener la reversión de tendencia
-        return "Reversión Bajista"  # Placeholder
-
-    # Placeholder para obtener la señal de trading
-    def obtener_signal(self, symbol):
-        # Implementar la lógica para obtener la señal de trading
-        return "Señal de Venta Detectada"  # Placeholder
+    def calcular_atr(self, symbol):
+        """
+        Aquí deberías implementar la lógica para calcular el ATR del símbolo.
+        """
+        # Esta función debería devolver el valor del ATR calculado.
+        # Por ahora devolveremos un valor de ejemplo para pruebas.
+        return 0.0015  # Valor de ejemplo
