@@ -16,9 +16,7 @@ class DataFetcher:
             raise ValueError(f"Error al obtener el estado del mercado: {response.status_code}")
         
         market_status = response.json()
-        if 'currencies' in market_status and market_status['currencies']['fx'] == "open":
-            return True
-        return False
+        return 'currencies' in market_status and market_status['currencies']['fx'] == "open"
 
     def obtener_datos(self, symbol, timeframe='hour', range='1', days=1):
         """

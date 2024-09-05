@@ -12,6 +12,29 @@ class ForexSignalAnalyzer:
         self.api_key_polygon = api_key_polygon
         self.executor = ThreadPoolExecutor(max_workers=5)
 
+    def verificar_estado_mercado(self):
+        """
+        Verifica si el mercado Forex está abierto utilizando la API de Polygon.io proporcionada por DataFetcher.
+        """
+        return self.data_fetcher.obtener_estado_mercado()
+
+    def obtener_datos_rsi(self, symbol):
+        """
+        Obtiene datos para calcular el RSI, usando el DataFetcher para solicitar datos históricos.
+        """
+        return self.data_fetcher.obtener_datos(symbol=symbol, timeframe='hour', range='1', days=14)
+
+    def generar_senal_trading(self, df, reverso_tendencia):
+        """
+        Genera señales de trading basadas en el RSI y las reversiones detectadas.
+        """
+        rsi = ta.rsi(df['Close'], length=14)
+        if rsi.iloc[-1] > 70 and reverso_tendencia == "Reversión Bajista Detectada":
+            return "Señal de Venta Detectada"
+        elif rsi.iloc[-1] < 30 and reverso_tendencia == "Reversión Alcista Detectada":
+            return "Señal de Compra Detectada"
+        return "No hay señal"
+
     def analizar_senales(self, pares_reversiones):
         """
         Analiza las señales de trading para los pares en los que se detectaron reversiones de tendencia.
@@ -19,21 +42,16 @@ class ForexSignalAnalyzer:
         if not self.verificar_estado_mercado():
             return {}  # Detener si el mercado está cerrado
 
-        resultados = {}  # Asegurarse que resultados sea un diccionario
-        print(f"Inicializando 'resultados' como diccionario: {resultados}")  # Debug print
-
-        futures = []  # Lista para almacenar las tareas de los hilos
+        resultados = {}
+        futures = []
         for pair, reverso_tendencia in pares_reversiones.items():
-            print(f"Procesando par: {pair} con reverso {reverso_tendencia}")  # Debug print
             symbol_polygon = pair.replace("-", "")
             future = self.executor.submit(self.analizar_senal_para_par, symbol_polygon, reverso_tendencia, resultados, pair)
             futures.append(future)
 
-        # Esperar a que todas las señales terminen de analizarse
         for future in futures:
             future.result()
 
-        print(f"Contenido final de 'resultados': {resultados}")  # Debug print
         return resultados
 
     def analizar_senal_para_par(self, symbol_polygon, reverso_tendencia, resultados, pair):
@@ -42,16 +60,32 @@ class ForexSignalAnalyzer:
         """
         try:
             df = self.obtener_datos_rsi(symbol_polygon)
-            resultado_senal = self.generar_senal_trading(df, reverso_tendencia, symbol_polygon)
-            if isinstance(resultados, dict):
+            resultado_senal = self.generar_senal_trading(df, reverso_tendencia)
+            if resultado_senal:
                 resultados[pair] = resultado_senal
-                print(f"Señal generada para {pair}: {resultado_senal}")  # Debug print
-            else:
-                raise TypeError(f"Error: Se esperaba un diccionario en 'resultados', pero se recibió: {type(resultados)}")
-
-            if "Señal de Compra Detectada" in resultado_senal or "Señal de Venta Detectada" in resultado_senal:
-                self.mt5_executor.ejecutar_orden(symbol_polygon, "buy" if "Compra" in resultado_senal else "sell")
+                # Si se genera una señal de compra o venta, se ejecuta una orden
+                if "Compra" in resultado_senal or "Venta" in resultado_senal:
+                    order_type = "buy" if "Compra" in resultado_senal else "sell"
+                    self.mt5_executor.ejecutar_orden(symbol_polygon, order_type)
         except ValueError as e:
             print(f"Error en el análisis de señales para {pair}: {str(e)}")
         except TypeError as e:
             print(f"Error de tipo en {pair}: {str(e)}")
+
+# Uso del programa
+if __name__ == "__main__":
+    # Instancias necesarias para la ejecución
+    data_fetcher = DataFetcher("0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
+    mt5_executor = MetaTrader5Executor(None)  # Sin condiciones de cierre por ahora
+    signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
+
+    # Simulación de reversiones detectadas para varios pares de divisas
+    pares_reversiones_simulada = {
+        "GBP-USD": "Reversión Alcista Detectada",
+        "USD-JPY": "Reversión Bajista Detectada",
+        "EUR-USD": "Reversión Alcista Detectada"
+    }
+
+    # Analizar las señales de trading basadas en las reversiones detectadas
+    resultado_senales = signal_analyzer.analizar_senales(pares_reversiones_simulada)
+    print(f"Señales generadas: {resultado_senales}")

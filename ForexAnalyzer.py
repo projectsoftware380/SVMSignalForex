@@ -17,68 +17,58 @@ class ForexAnalyzer:
         """
         url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
         response = requests.get(url)
-        data = response.json()
-
         if response.status_code != 200:
             return False
-
-        # Verificar si el mercado de Forex está abierto
-        return data.get('currencies', {}).get('fx') == "open"
+        return response.json().get('currencies', {}).get('fx') == "open"
 
     def calcular_sma(self, series, length):
-        if len(series) < length:
-            raise ValueError(f"No se puede calcular SMA de longitud {length} debido a datos insuficientes.")
-        sma = ta.sma(series, length=length)
-        if sma is None:
-            raise ValueError(f"No se pudo calcular SMA para length={length}")
-        return sma
+        """
+        Calcula la media móvil simple (SMA) para una serie de datos.
+        """
+        return ta.sma(series, length=length)
 
     def determinar_tendencia(self, df):
-        tenkan_sen = (self.calcular_sma(df['High'], length=9) + self.calcular_sma(df['Low'], length=9)) / 2
-        kijun_sen = (self.calcular_sma(df['High'], length=26) + self.calcular_sma(df['Low'], length=26)) / 2
+        """
+        Determina la tendencia de un par de divisas utilizando indicadores técnicos.
+        """
+        # Cálculo de Ichimoku Cloud para determinar tendencia
+        tenkan_sen = (self.calcular_sma(df['High'], 9) + self.calcular_sma(df['Low'], 9)) / 2
+        kijun_sen = (self.calcular_sma(df['High'], 26) + self.calcular_sma(df['Low'], 26)) / 2
         senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(26)
-        
-        senkou_span_b_high = self.calcular_sma(df['High'], length=52)
-        senkou_span_b_low = self.calcular_sma(df['Low'], length=52)
-        
-        if senkou_span_b_high is None or senkou_span_b_low is None:
-            return "Datos insuficientes para calcular la tendencia"
-        
-        senkou_span_b = (senkou_span_b_high + senkou_span_b_low) / 2
-        senkou_span_b = senkou_span_b.shift(26)
+        senkou_span_b = ((self.calcular_sma(df['High'], 52) + self.calcular_sma(df['Low'], 52)) / 2).shift(26)
 
         if df['Close'].iloc[-1] > senkou_span_a.iloc[-1] and df['Close'].iloc[-1] > senkou_span_b.iloc[-1]:
-            if tenkan_sen.iloc[-1] > kijun_sen.iloc[-1]:
-                return "Tendencia Alcista"
-            else:
-                return "No tendencia (posible reversión)"
+            return "Tendencia Alcista"
         elif df['Close'].iloc[-1] < senkou_span_a.iloc[-1] and df['Close'].iloc[-1] < senkou_span_b.iloc[-1]:
-            if tenkan_sen.iloc[-1] < kijun_sen.iloc[-1]:
-                return "Tendencia Bajista"
-            else:
-                return "No tendencia (posible reversión)"
-        else:
-            return "No tendencia (en consolidación)"
+            return "Tendencia Bajista"
+        return "No tendencia (en consolidación)"
 
     def obtener_sentimiento(self, pair):
+        """
+        Obtiene el sentimiento del mercado para un par de divisas desde la API de ForexNews.
+        """
         url = f"https://forexnewsapi.com/api/v1/stat?currencypair={pair}&date=last30days&page=1&token={self.api_token_forexnews}"
         response = requests.get(url)
-        data = response.json()
+        if response.status_code != 200:
+            raise ValueError(f"Error al obtener datos de sentimiento para el par {pair}. Código: {response.status_code}")
+        
+        data = response.json().get('data', {})
+        if not data:
+            print(f"No se encontraron datos de sentimiento para el par {pair}")
+            return "Sin datos de sentimiento"
 
-        if 'data' in data:
-            fechas = sorted(data['data'].keys(), reverse=True)
-            fecha_reciente = fechas[0]
-            sentimiento_data = data['data'][fecha_reciente][pair]
-            sentiment_score = sentimiento_data['sentiment_score']
-
+        # Tomar el primer valor disponible en el campo 'data'
+        for fecha, sentimiento_par in data.items():
+            sentiment_score = sentimiento_par.get(pair, {}).get('sentiment_score', 0)
             if sentiment_score > 0:
                 return "Sentimiento Alcista"
             elif sentiment_score < 0:
                 return "Sentimiento Bajista"
-            else:
-                return "Sentimiento Neutral"
-        else:
-            raise ValueError(f"No se encontraron datos para el par {pair}")
+            return "Sentimiento Neutral"
+
+        # Si no se encuentran datos útiles, devolver este mensaje
+        print(f"No se encontraron datos útiles de sentimiento para el par {pair}.")
+        return "Sin datos útiles de sentimiento"
 
     def analizar_par(self, pair):
         """
@@ -87,51 +77,25 @@ class ForexAnalyzer:
         if not self.verificar_estado_mercado():
             return f"{pair}: El mercado está cerrado. No se realizó análisis."
 
-        try:
-            symbol_polygon = pair.replace("-", "")
-            df = self.data_fetcher.obtener_datos(symbol_polygon, timeframe='hour', range='1', days=60)
+        symbol_polygon = pair.replace("-", "")
+        df = self.data_fetcher.obtener_datos(symbol_polygon, 'hour', '1', 60)
+        if df.empty:
+            return f"{pair}: Datos insuficientes para análisis."
 
-            if df.empty:
-                raise ValueError(f"Los datos obtenidos para {symbol_polygon} no son los más recientes o están incompletos.")
+        # Determinar la tendencia y el sentimiento del mercado
+        tendencia = self.determinar_tendencia(df)
+        sentimiento = self.obtener_sentimiento(pair)
 
-            tendencia = self.determinar_tendencia(df)
-            sentimiento = self.obtener_sentimiento(pair)
+        # Actualizar la tendencia del par en el diccionario interno
+        self.last_trend[pair] = tendencia
 
-            if tendencia == "Tendencia Alcista" and sentimiento == "Sentimiento Alcista":
-                return f"{symbol_polygon} Tendencia Alcista"
-            elif tendencia == "Tendencia Bajista" and sentimiento == "Sentimiento Bajista":
-                return f"{symbol_polygon} Tendencia Bajista"
-            else:
-                return f"{symbol_polygon} Neutral"
-        except ValueError as e:
-            return f"{pair}: Error en el análisis - {str(e)}"
-
-    def detectar_cambio_tendencia(self, pair):
-        """
-        Detecta si ha habido un cambio en la tendencia para un par específico.
-        """
-        tendencia_actual = self.analizar_par(pair)
-        if pair not in self.last_trend:
-            self.last_trend[pair] = tendencia_actual
-            return False
-
-        if tendencia_actual != self.last_trend[pair]:
-            self.last_trend[pair] = tendencia_actual
-            return True
-
-        return False
+        return f"{symbol_polygon}: {tendencia}, {sentimiento}"
 
 # Uso del programa
 if __name__ == "__main__":
-    api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"
-    api_token_forexnews = "25wpwpebrawmafmvjuagciubjoylthzaybzvbtqk"
-    
-    data_fetcher = DataFetcher(api_key_polygon)
-    
-    analyzer = ForexAnalyzer(data_fetcher, api_token_forexnews, api_key_polygon)
-    
+    data_fetcher = DataFetcher("0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
+    analyzer = ForexAnalyzer(data_fetcher, "25wpwpebrawmafmvjuagciubjoylthzaybzvbtqk", "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
     pairs = ["GBP-USD", "USD-CHF", "USD-JPY", "GBP-CAD", "USD-CAD"]
-    
     for pair in pairs:
         resultado = analyzer.analizar_par(pair)
         print(resultado)

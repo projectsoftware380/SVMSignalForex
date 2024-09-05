@@ -7,13 +7,10 @@ class MetaTrader5Executor:
         self.operaciones_abiertas = {}  # Guardar las operaciones activas para monitoreo
         self.close_conditions = close_conditions  # Instancia de la clase TradeCloseConditions
 
-    def estandarizar_simbolo(self, symbol):
-        """
-        Estandariza el formato del símbolo, removiendo guiones.
-        """
-        return symbol.replace("-", "")
-
     def conectar_mt5(self):
+        """
+        Establece la conexión con MetaTrader 5.
+        """
         print("Intentando conectar con MetaTrader 5...")
         if not mt5.initialize():
             print(f"Error al conectar con MetaTrader 5, código de error = {mt5.last_error()}")
@@ -29,122 +26,11 @@ class MetaTrader5Executor:
         """
         print("Sincronizando operaciones existentes...")
         posiciones = self.obtener_posiciones_abiertas()
-        if isinstance(posiciones, list):
-            print(f"Lista de posiciones abiertas procesada: {posiciones}")
-            for posicion in posiciones:
-                symbol = self.estandarizar_simbolo(posicion['symbol'])  # Estandarizar símbolo
-                position_id = posicion['ticket']
-                print(f"Procesando posición: {posicion}")
-                if symbol and position_id:
-                    self.operaciones_abiertas[symbol] = position_id
-                    print(f"Operación sincronizada: {symbol}, ID: {position_id}")
-        else:
-            print(f"Error: Se esperaba una lista de posiciones, pero se recibió {type(posiciones)}")
-
-    def seleccionar_simbolo(self, symbol):
-        symbol_estandarizado = self.estandarizar_simbolo(symbol)
-        symbol_info = mt5.symbol_info(symbol_estandarizado)
-        if symbol_info is None:
-            return False
-        
-        if not symbol_info.visible:
-            if not mt5.symbol_select(symbol_estandarizado, True):
-                return False
-        return True
-
-    def ejecutar_orden(self, symbol, order_type):
-        """
-        Ejecuta la orden de compra o venta y luego ajusta el SL y TP basados en el precio de ejecución.
-        """
-        if not self.conectado:
-            return
-        
-        if not self.seleccionar_simbolo(symbol):
-            return
-
-        symbol_estandarizado = self.estandarizar_simbolo(symbol)
-        lot = 0.1
-        price = mt5.symbol_info_tick(symbol_estandarizado).ask if order_type == "buy" else mt5.symbol_info_tick(symbol_estandarizado).bid
-        deviation = 20
-        order_type_mt5 = mt5.ORDER_TYPE_BUY if order_type == "buy" else mt5.ORDER_TYPE_SELL
-
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol_estandarizado,
-            "volume": lot,
-            "type": order_type_mt5,
-            "price": price,
-            "deviation": deviation,
-            "magic": 234000,
-            "comment": "Orden automática",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_FOK,
-        }
-        result = mt5.order_send(request)
-        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-            return None
-        self.operaciones_abiertas[symbol_estandarizado] = result.order
-        
-        # Después de la ejecución, ajustar SL y TP
-        print(f"Orden ejecutada para {symbol_estandarizado} con precio {result.price}. Ajustando SL y TP...")
-        self.ajustar_stop_loss_take_profit(symbol_estandarizado, result.order, result.price, order_type)
-
-        return result.order
-
-    def ajustar_stop_loss_take_profit(self, symbol, position_id, precio_ejecucion, order_type):
-        """
-        Ajusta el Stop Loss y el Take Profit basados en el precio de ejecución.
-        """
-        symbol_estandarizado = self.estandarizar_simbolo(symbol)
-        stop_loss_factor = 1.5  # Ejemplo: 1.5 veces el ATR
-        take_profit_factor = 3.0  # Ejemplo: 3 veces el ATR
-
-        atr_value = self.calcular_atr(symbol_estandarizado)
-
-        if atr_value is None:
-            print(f"No se pudo calcular el ATR para {symbol_estandarizado}, no se ajustarán SL y TP.")
-            return
-
-        stop_loss = precio_ejecucion - (atr_value * stop_loss_factor) if order_type == "buy" else precio_ejecucion + (atr_value * stop_loss_factor)
-        take_profit = precio_ejecucion + (atr_value * take_profit_factor) if order_type == "buy" else precio_ejecucion - (atr_value * take_profit_factor)
-
-        print(f"Ajustando Stop Loss a {stop_loss} y Take Profit a {take_profit} para {symbol_estandarizado}")
-
-        request = {
-            "action": mt5.TRADE_ACTION_SLTP,
-            "position": position_id,
-            "symbol": symbol_estandarizado,
-            "sl": stop_loss,
-            "tp": take_profit,
-        }
-        result = mt5.order_send(request)
-        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-            print(f"Error al ajustar SL y TP para {symbol_estandarizado}")
-        else:
-            print(f"SL y TP ajustados correctamente para {symbol_estandarizado}")
-
-    def cerrar_posicion(self, symbol, position_id):
-        symbol_estandarizado = self.estandarizar_simbolo(symbol)
-        price = mt5.symbol_info_tick(symbol_estandarizado).bid
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "position": position_id,
-            "symbol": symbol_estandarizado,
-            "volume": 0.1,
-            "type": mt5.ORDER_TYPE_SELL,
-            "price": price,
-            "deviation": 20,
-            "magic": 234000,
-            "comment": "Cierre automático",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_FOK,
-        }
-        result = mt5.order_send(request)
-        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-            return False
-        if symbol_estandarizado in self.operaciones_abiertas:
-            del self.operaciones_abiertas[symbol_estandarizado]
-        return True
+        for posicion in posiciones:
+            symbol = posicion['symbol']
+            tipo_operacion = 'compra' if posicion['type'] == mt5.ORDER_TYPE_BUY else 'venta'
+            self.operaciones_abiertas[symbol] = {'id': posicion['ticket'], 'tipo': tipo_operacion}
+            print(f"Operación sincronizada: {symbol}, Tipo: {tipo_operacion}")
 
     def obtener_posiciones_abiertas(self):
         """
@@ -152,59 +38,82 @@ class MetaTrader5Executor:
         """
         posiciones = mt5.positions_get()
         if posiciones is None:
+            print("No hay posiciones abiertas.")
             return []
 
-        lista_posiciones = []
-        for posicion in posiciones:
-            posicion_diccionario = {
-                'symbol': self.estandarizar_simbolo(posicion.symbol),
-                'ticket': posicion.ticket,
-                'type': posicion.type
-            }
-            lista_posiciones.append(posicion_diccionario)
-        print(f"Lista de posiciones abiertas procesada: {lista_posiciones}")
-        return lista_posiciones
+        return [{'symbol': posicion.symbol, 'ticket': posicion.ticket, 'type': posicion.type} for posicion in posiciones]
 
-    def monitorear_operaciones(self):
+    def ejecutar_orden(self, symbol, order_type):
         """
-        Monitorea las posiciones abiertas y cierra aquellas que cumplan ciertos criterios.
+        Ejecuta una orden de compra o venta en MetaTrader 5.
         """
-        print("Monitoreando operaciones...")
-        try:
-            posiciones = self.obtener_posiciones_abiertas()
-            print(f"Posiciones obtenidas durante el monitoreo: {posiciones}")
-            
-            if not isinstance(posiciones, list):
-                print(f"Error: Se esperaba una lista pero se recibió {type(posiciones)}")
-                return
-            
-            for posicion in posiciones:
-                symbol = posicion.get('symbol')
-                position_id = posicion.get('ticket')
-                tendencia_actual = "Tendencia actual placeholder"
-                reverso_tendencia = "Reversión placeholder"
-                signal = "Señal placeholder"
+        if not self.conectado or not self.seleccionar_simbolo(symbol):
+            return
 
-                if self.close_conditions.verificar_cierre_por_condiciones(symbol, tendencia_actual, reverso_tendencia, signal):
-                    print(f"Condiciones de cierre válidas para {symbol}, procediendo a cerrar la posición.")
-                    self.cerrar_posicion(symbol, position_id)
-                else:
-                    print(f"Condiciones de cierre no válidas o incompletas para {symbol}, no se cierra la posición.")
+        price = mt5.symbol_info_tick(symbol).ask if order_type == "buy" else mt5.symbol_info_tick(symbol).bid
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": 0.1,  # ejemplo de volumen
+            "type": mt5.ORDER_TYPE_BUY if order_type == "buy" else mt5.ORDER_TYPE_SELL,
+            "price": price,
+            "deviation": 20,
+            "magic": 234000,
+            "comment": "Orden automática",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_FOK,
+        }
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            print(f"Error al ejecutar orden: {mt5.last_error()}")
+        else:
+            print(f"Orden ejecutada con éxito: {symbol}, Tipo: {order_type}, Precio: {result.price}")
+            self.operaciones_abiertas[symbol] = {'id': result.order, 'tipo': order_type}
 
-        except Exception as e:
-            print(f"Error durante el monitoreo de cierres: {str(e)}")
+    def cerrar_posicion(self, symbol, ticket):
+        """
+        Cierra una posición en MetaTrader 5 basada en el ticket de la posición.
+        """
+        posicion = mt5.positions_get(ticket=ticket)
+        if posicion is None or len(posicion) == 0:
+            print(f"No se encontró la posición: {ticket}")
+            return False
 
-    def iniciar_monitoreo(self):
-        thread = threading.Thread(target=self.monitorear_operaciones)
-        thread.daemon = True
-        thread.start()
+        # Determinar el precio adecuado para cerrar la posición
+        precio = mt5.symbol_info_tick(symbol).bid if posicion[0].type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(symbol).ask
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "position": ticket,
+            "symbol": symbol,
+            "volume": posicion[0].volume,
+            "type": mt5.ORDER_TYPE_SELL if posicion[0].type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY,
+            "price": precio,
+            "deviation": 20,
+            "magic": 234000,
+            "comment": "Cierre automático"
+        }
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            print(f"No se pudo cerrar la posición: {symbol}, Ticket: {ticket}, Error: {mt5.last_error()}")
+            return False
+        else:
+            del self.operaciones_abiertas[symbol]
+            print(f"Posición cerrada: {symbol}, Ticket: {ticket}")
+            return True
+
+    def seleccionar_simbolo(self, symbol):
+        """
+        Asegura que el símbolo esté seleccionado en MetaTrader 5 para realizar operaciones.
+        """
+        if not mt5.symbol_select(symbol, True):
+            print(f"No se pudo seleccionar el símbolo: {symbol}")
+            return False
+        return True
 
     def cerrar_conexion(self):
-        mt5.shutdown()
-        self.conectado = False
-
-    def calcular_atr(self, symbol):
         """
-        Implementa la lógica para calcular el ATR del símbolo.
+        Cierra la conexión con MetaTrader 5.
         """
-        return 0.0015  # Valor de ejemplo
+        if mt5.shutdown():
+            self.conectado = False
+            print("Conexión con MetaTrader 5 cerrada.")
