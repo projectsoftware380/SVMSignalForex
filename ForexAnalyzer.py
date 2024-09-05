@@ -20,15 +20,10 @@ class ForexAnalyzer:
         data = response.json()
 
         if response.status_code != 200:
-            print(f"Error al verificar el estado del mercado: {response.status_code}")
             return False
 
         # Verificar si el mercado de Forex está abierto
-        if data['currencies']['fx'] == "open":
-            return True
-        else:
-            print("El mercado Forex está cerrado. No se realizarán análisis.")
-            return False
+        return data.get('currencies', {}).get('fx') == "open"
 
     def calcular_sma(self, series, length):
         if len(series) < length:
@@ -77,13 +72,11 @@ class ForexAnalyzer:
             sentiment_score = sentimiento_data['sentiment_score']
 
             if sentiment_score > 0:
-                sentimiento = "Sentimiento Alcista"
+                return "Sentimiento Alcista"
             elif sentiment_score < 0:
-                sentimiento = "Sentimiento Bajista"
+                return "Sentimiento Bajista"
             else:
-                sentimiento = "Sentimiento Neutral"
-
-            return sentimiento
+                return "Sentimiento Neutral"
         else:
             raise ValueError(f"No se encontraron datos para el par {pair}")
 
@@ -91,7 +84,6 @@ class ForexAnalyzer:
         """
         Analiza el par de divisas para determinar la tendencia y sentimiento.
         """
-        # Verificar si el mercado Forex está abierto
         if not self.verificar_estado_mercado():
             return f"{pair}: El mercado está cerrado. No se realizó análisis."
 
@@ -121,12 +113,11 @@ class ForexAnalyzer:
         tendencia_actual = self.analizar_par(pair)
         if pair not in self.last_trend:
             self.last_trend[pair] = tendencia_actual
-            return False  # No se considera un cambio si no hay historial
+            return False
 
         if tendencia_actual != self.last_trend[pair]:
-            print(f"Cambio de tendencia detectado en {pair}: de {self.last_trend[pair]} a {tendencia_actual}")
             self.last_trend[pair] = tendencia_actual
-            return True  # Cambio de tendencia detectado
+            return True
 
         return False
 
@@ -143,5 +134,5 @@ if __name__ == "__main__":
     
     for pair in pairs:
         resultado = analyzer.analizar_par(pair)
-        print(resultado)  # Solo imprime el resultado final para cada par de divisas
+        print(resultado)
 

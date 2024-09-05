@@ -15,7 +15,6 @@ class ForexReversalAnalyzer:
     def obtener_datos_bollinger(self, symbol):
         """
         Solicita los datos más recientes para calcular las Bandas de Bollinger.
-        Se obtienen datos de los últimos 5 días con velas de 15 minutos.
         """
         df = self.data_fetcher.obtener_datos(symbol=symbol, timeframe='minute', range='15', days=5)
         if df.empty:
@@ -45,30 +44,16 @@ class ForexReversalAnalyzer:
         """
         Verifica si el mercado Forex está abierto utilizando la API de Polygon.io.
         """
-        url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
-        response = requests.get(url)
-        data = response.json()
-
-        if response.status_code != 200:
-            print(f"Error al verificar el estado del mercado: {response.status_code}")
-            return False
-
-        # Verificar si el mercado de Forex está abierto
-        if data.get('currencies', {}).get('fx') == "open":
-            return True
-        else:
-            print("El mercado Forex está cerrado. No se realizarán análisis.")
-            return False
+        return self.data_fetcher.obtener_estado_mercado()
 
     def analizar_reversiones(self, pares_tendencia):
         """
         Analiza los pares de divisas en tendencia para detectar posibles reversiones.
-        Solo se ejecuta si el mercado está abierto.
         """
         if not self.verificar_estado_mercado():
             return {}  # Detener la ejecución si el mercado está cerrado
 
-        resultados = {}
+        resultados = {}  # Verificar que sea un diccionario
         futures = []  # Almacenar las tareas de los hilos
 
         for pair, tendencia in pares_tendencia.items():
@@ -82,14 +67,6 @@ class ForexReversalAnalyzer:
         for future in futures:
             future.result()
 
-        # Imprimir los resultados de las reversiones detectadas
-        if resultados:
-            print("Reversiones detectadas:")
-            for pair, resultado in resultados.items():
-                print(f"{pair}: {resultado}")
-        else:
-            print("No se detectaron reversiones.")
-
         return resultados
 
     def analizar_reversion_para_par(self, symbol_polygon, tendencia_simple, resultados, pair):
@@ -100,43 +77,15 @@ class ForexReversalAnalyzer:
             df = self.obtener_datos_bollinger(symbol_polygon)
             resultado_reversion = self.detectar_reversion(df, tendencia_simple)
             if resultado_reversion:
+                # Verificar que 'resultados' sea un diccionario antes de agregarle contenido
                 if isinstance(resultados, dict):
                     resultados[pair] = resultado_reversion
                 else:
-                    raise TypeError(f"Se esperaba un diccionario para almacenar los resultados, pero se recibió: {type(resultados)}")
-                # Si se detecta una reversión, enviar una solicitud al MetaTrader5Executor
+                    raise TypeError(f"Error: Se esperaba un diccionario en 'resultados', pero se recibió: {type(resultados)}")
+                # Si se detecta una reversión, ejecutar la lógica
                 self.mt5_executor.procesar_reversion(pair, resultado_reversion)
         except ValueError as e:
             print(f"Error en el análisis para {pair}: {str(e)}")
         except TypeError as e:
             print(f"Error de tipo en {pair}: {str(e)}")
 
-# Ejemplo de uso
-if __name__ == "__main__":
-    api_key_polygon = "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"  # Reemplaza con tu clave API
-
-    # Instancia de DataFetcher
-    data_fetcher = DataFetcher(api_key_polygon)
-
-    # Instancia de MetaTrader5Executor (debería ser multihilo)
-    mt5_executor = MetaTrader5Executor()
-
-    # Instancia de ForexReversalAnalyzer utilizando DataFetcher y MetaTrader5Executor
-    reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, api_key_polygon)
-
-    # Ejemplo de pares en tendencia desde ForexAnalyzer (Simulado)
-    pares_en_tendencia = {
-        "AUD-USD": "AUDUSD Tendencia Bajista",
-        "NZD-USD": "NZDUSD Tendencia Bajista",
-        "USD-CHF": "USDCHF Tendencia Alcista",
-        "USD-INR": "USDINR Tendencia Bajista",
-        "EUR-CHF": "EURCHF Tendencia Alcista",
-        "GBP-EUR": "GBPEUR Tendencia Bajista",
-        "GBP-CHF": "GBPCHF Tendencia Alcista",
-        "GBP-INR": "GBPINR Tendencia Bajista",
-        "CAD-JPY": "CADJPY Tendencia Alcista",
-        "USD-SGD": "USDSGD Tendencia Alcista"
-    }
-
-    # Analizar reversiones en paralelo
-    resultados_reversiones = reversal_analyzer.analizar_reversiones(pares_en_tendencia)

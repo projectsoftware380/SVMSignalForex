@@ -30,10 +30,9 @@ class DataFetcher:
         :param days: Número de días de historia a recuperar.
         :return: DataFrame con los datos obtenidos.
         """
-        # Verificar si el mercado está abierto
         if not self.obtener_estado_mercado():
             raise ValueError("El mercado está cerrado. No se pueden obtener datos.")
-
+        
         fecha_actual = datetime.now(timezone.utc)
         fecha_inicio = fecha_actual - timedelta(days=days)
 
@@ -49,6 +48,7 @@ class DataFetcher:
             raise ValueError(f"Error al obtener datos de la API para {symbol}: {response.status_code}")
         
         data = response.json()
+
         if 'results' in data:
             df = pd.DataFrame(data['results'])
             df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
@@ -66,15 +66,3 @@ class DataFetcher:
             return df_recientes[['Open', 'High', 'Low', 'Close', 'Volume']]
         else:
             raise ValueError(f"No se pudieron obtener datos de la API para {symbol}.")
-
-    def obtener_ultimos_datos(self, symbol):
-        """
-        Obtiene los últimos datos disponibles para un símbolo específico y verifica su frescura.
-        """
-        df = self.obtener_datos(symbol=symbol, timeframe='minute', range='1', days=1)
-        
-        # Validar si los datos son recientes
-        if df.empty:
-            raise ValueError(f"No se obtuvieron datos recientes para {symbol}.")
-        
-        return df
