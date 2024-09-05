@@ -2,9 +2,10 @@ import MetaTrader5 as mt5
 import threading
 
 class MetaTrader5Executor:
-    def __init__(self):
+    def __init__(self, close_conditions):
         self.conectado = False
         self.operaciones_abiertas = {}  # Guardar las operaciones activas para monitoreo
+        self.close_conditions = close_conditions  # Instancia de la clase TradeCloseConditions
 
     def conectar_mt5(self):
         print("Intentando conectar con MetaTrader 5...")
@@ -161,15 +162,6 @@ class MetaTrader5Executor:
         print(f"Lista de posiciones abiertas procesada: {lista_posiciones}")
         return lista_posiciones
 
-    def procesar_reversion(self, symbol, resultado_reversion):
-        """
-        Procesa una reversión detectada y ejecuta la lógica de trading.
-        """
-        if "Alcista" in resultado_reversion:
-            self.ejecutar_orden(symbol, "buy")
-        elif "Bajista" in resultado_reversion:
-            self.ejecutar_orden(symbol, "sell")
-
     def monitorear_operaciones(self):
         """
         Monitorea las posiciones abiertas y cierra aquellas que cumplan ciertos criterios.
@@ -187,12 +179,16 @@ class MetaTrader5Executor:
                 print(f"Revisando posición: {posicion}")
                 symbol = posicion.get('symbol')
                 position_id = posicion.get('ticket')
-                print(f"Revisando posición para {symbol} con ID {position_id}")
-                
-                # Aquí se puede agregar la lógica para cerrar posiciones si se cumplen ciertos criterios.
-                # Ejemplo:
-                # if self.debe_cerrar_posicion(symbol, position_id):
-                #     self.cerrar_posicion(symbol, position_id)
+                tendencia_actual = "Tendencia actual placeholder"  # Esto sería un resultado real de ForexAnalyzer
+                reverso_tendencia = "Reversión placeholder"  # Esto sería un resultado real de ForexReversalAnalyzer
+                signal = "Señal placeholder"  # Esto sería un resultado real de ForexSignalAnalyzer
+
+                # Verificar las condiciones de cierre usando la clase TradeCloseConditions
+                if self.close_conditions.verificar_cierre_por_condiciones(symbol, tendencia_actual, reverso_tendencia, signal):
+                    print(f"Condiciones de cierre válidas para {symbol}, procediendo a cerrar la posición.")
+                    self.cerrar_posicion(symbol, position_id)
+                else:
+                    print(f"Condiciones de cierre no válidas o incompletas para {symbol}, no se cierra la posición.")
 
         except Exception as e:
             print(f"Error durante el monitoreo de cierres: {str(e)}")

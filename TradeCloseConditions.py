@@ -1,6 +1,10 @@
 class TradeCloseConditions:
-    def __init__(self):
-        self.config = None  # Configuración adicional (si se necesita más adelante)
+    def __init__(self, mt5_executor):
+        """
+        Inicializa la clase con el objeto de MetaTrader5Executor para interactuar con las operaciones.
+        """
+        self.mt5_executor = mt5_executor  # Referencia a MetaTrader5Executor
+        self.config = None  # Configuración adicional si se necesita más adelante
 
     def verificar_tendencia_contraria(self, symbol, tendencia_actual):
         """

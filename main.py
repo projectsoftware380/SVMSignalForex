@@ -4,7 +4,7 @@ from ForexAnalyzer import ForexAnalyzer
 from ForexReversalAnalyzer import ForexReversalAnalyzer
 from ForexSignalAnalyzer import ForexSignalAnalyzer
 from MetaTrader5Executor import MetaTrader5Executor
-from TradeCloseConditions import TradeCloseConditions  # Nueva clase
+from TradeCloseConditions import TradeCloseConditions  # Importamos la nueva clase
 from DataFetcher import DataFetcher
 import json
 
@@ -21,8 +21,8 @@ cierre_interval: int = config.get('cierre_interval', 180)
 data_fetcher: DataFetcher = DataFetcher(config['api_key_polygon'])
 
 # Instanciar las clases necesarias
-mt5_executor: MetaTrader5Executor = MetaTrader5Executor()
-trade_close_conditions: TradeCloseConditions = TradeCloseConditions(mt5_executor)  # Instancia de TradeCloseConditions
+close_conditions = TradeCloseConditions()  # Instancia de TradeCloseConditions
+mt5_executor = MetaTrader5Executor(close_conditions)  # Pasamos la instancia a MetaTrader5Executor
 forex_analyzer: ForexAnalyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'], config['api_key_polygon'])
 forex_reversal_analyzer: ForexReversalAnalyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
 forex_signal_analyzer: ForexSignalAnalyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
@@ -84,15 +84,18 @@ def monitorear_cierres() -> None:
             posiciones_abiertas: list = mt5_executor.obtener_posiciones_abiertas()
             for posicion in posiciones_abiertas:
                 symbol: str = posicion['symbol']
-                position_id: int = posicion['ticket']
                 tipo_operacion: int = posicion['type']
 
-                # Verificar condiciones de cierre usando la nueva clase
-                if trade_close_conditions.evaluar_condiciones_de_cierre(symbol, tipo_operacion):
-                    mt5_executor.cerrar_posicion(symbol, position_id)
+                nueva_tendencia: str = forex_analyzer.analizar_par(symbol.replace("_", "-"))
+                if ("Alcista" in nueva_tendencia and tipo_operacion == mt5.ORDER_TYPE_SELL) or \
+                   ("Bajista" in nueva_tendencia and tipo_operacion == mt5.ORDER_TYPE_BUY) or \
+                   ("Neutral" in nueva_tendencia):
+                    mt5_executor.cerrar_posicion(symbol, posicion['ticket'])
                 else:
-                    print(f"No se cumplen condiciones para cerrar la posición de {symbol}.")
-                    
+                    reverso_tendencia: dict = forex_reversal_analyzer.analizar_reversiones({symbol: nueva_tendencia})
+                    if isinstance(reverso_tendencia, dict) and symbol in reverso_tendencia:
+                        mt5_executor.cerrar_posicion(symbol, posicion['ticket'])
+
         except Exception as e:
             print(f"Error durante el monitoreo de cierres: {str(e)}")
         time.sleep(cierre_interval)
@@ -116,3 +119,4 @@ if __name__ == "__main__":
         print("Proceso interrumpido manualmente.")
     finally:
         mt5_executor.cerrar_conexion()
+
