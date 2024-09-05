@@ -35,7 +35,7 @@ class ForexSignalAnalyzer:
             return "Señal de Compra Detectada"
         return "No hay señal"
 
-    def analizar_senales(self, pares_reversiones):
+    def analizar_senales(self, pares_reversiones, imprimir_senales):
         """
         Analiza las señales de trading para los pares en los que se detectaron reversiones de tendencia.
         """
@@ -46,7 +46,7 @@ class ForexSignalAnalyzer:
         futures = []
         for pair, reverso_tendencia in pares_reversiones.items():
             symbol_polygon = pair.replace("-", "")
-            future = self.executor.submit(self.analizar_senal_para_par, symbol_polygon, reverso_tendencia, resultados, pair)
+            future = self.executor.submit(self.analizar_senal_para_par, symbol_polygon, reverso_tendencia, resultados, pair, imprimir_senales)
             futures.append(future)
 
         for future in futures:
@@ -54,38 +54,21 @@ class ForexSignalAnalyzer:
 
         return resultados
 
-    def analizar_senal_para_par(self, symbol_polygon, reverso_tendencia, resultados, pair):
+    def analizar_senal_para_par(self, symbol_polygon, reverso_tendencia, resultados, pair, imprimir_senales):
         """
         Función que maneja el análisis de señales para cada par en paralelo.
         """
         try:
             df = self.obtener_datos_rsi(symbol_polygon)
             resultado_senal = self.generar_senal_trading(df, reverso_tendencia)
-            if resultado_senal:
+            if resultado_senal and ("Compra" in resultado_senal or "Venta" in resultado_senal):
                 resultados[pair] = resultado_senal
-                # Si se genera una señal de compra o venta, se ejecuta una orden
-                if "Compra" in resultado_senal or "Venta" in resultado_senal:
-                    order_type = "buy" if "Compra" in resultado_senal else "sell"
-                    self.mt5_executor.ejecutar_orden(symbol_polygon, order_type)
+                if imprimir_senales:
+                    print(f"Señal detectada para {pair}: {resultado_senal}")
+                # Ejecutar una orden en MetaTrader 5 según la señal detectada
+                order_type = "buy" if "Compra" in resultado_senal else "sell"
+                self.mt5_executor.ejecutar_orden(symbol_polygon, order_type)
         except ValueError as e:
             print(f"Error en el análisis de señales para {pair}: {str(e)}")
         except TypeError as e:
             print(f"Error de tipo en {pair}: {str(e)}")
-
-# Uso del programa
-if __name__ == "__main__":
-    # Instancias necesarias para la ejecución
-    data_fetcher = DataFetcher("0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
-    mt5_executor = MetaTrader5Executor(None)  # Sin condiciones de cierre por ahora
-    signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
-
-    # Simulación de reversiones detectadas para varios pares de divisas
-    pares_reversiones_simulada = {
-        "GBP-USD": "Reversión Alcista Detectada",
-        "USD-JPY": "Reversión Bajista Detectada",
-        "EUR-USD": "Reversión Alcista Detectada"
-    }
-
-    # Analizar las señales de trading basadas en las reversiones detectadas
-    resultado_senales = signal_analyzer.analizar_senales(pares_reversiones_simulada)
-    print(f"Señales generadas: {resultado_senales}")

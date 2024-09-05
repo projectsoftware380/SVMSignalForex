@@ -8,8 +8,10 @@ from TradeCloseConditions import TradeCloseConditions
 from DataFetcher import DataFetcher
 import json
 
-# Bandera para controlar la impresión
-imprimir_tendencias = True
+# Banderas para controlar las impresiones
+imprimir_tendencias = False
+imprimir_reversiones = True
+imprimir_senales = True
 imprimir_cierres = False  # No imprimir en monitorear_cierres
 
 def main():
@@ -61,12 +63,13 @@ def main():
         try:
             # Analizar reversiones
             pares_reversion = forex_reversal_analyzer.analizar_reversiones(pares_tendencia)
-            for pair, reversion in pares_reversion.items():
-                if "Reversión" in reversion:
-                    # Analizar señales
-                    forex_signal_analyzer.analizar_senales({pair: reversion})
+            if imprimir_reversiones:
+                for pair, reversion in pares_reversion.items():
+                    print(f"Reversión detectada para {pair}: {reversion}")
+            # Analizar señales para las reversiones detectadas
+            forex_signal_analyzer.analizar_senales(pares_reversion, imprimir_senales)
         except Exception as e:
-            if imprimir_tendencias:
+            if imprimir_reversiones:
                 print(f"Error durante la evaluación de reversiones: {str(e)}")
 
     def monitorear_cierres():

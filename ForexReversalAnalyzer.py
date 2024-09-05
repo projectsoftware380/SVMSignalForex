@@ -76,6 +76,8 @@ class ForexReversalAnalyzer:
             if resultado_reversion:
                 if isinstance(resultados, dict):
                     resultados[pair] = resultado_reversion
+                    # Imprimir solo cuando se detecta una reversión válida
+                    print(f"Reversión detectada para {pair}: {resultado_reversion}")
                     # Interactuar con MetaTrader5Executor para procesar la reversión
                     self.mt5_executor.procesar_reversion(pair, resultado_reversion)
         except ValueError as e:

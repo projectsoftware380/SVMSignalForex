@@ -54,7 +54,6 @@ class ForexAnalyzer:
         
         data = response.json().get('data', {})
         if not data:
-            print(f"No se encontraron datos de sentimiento para el par {pair}")
             return "Sin datos de sentimiento"
 
         # Tomar el primer valor disponible en el campo 'data'
@@ -66,8 +65,6 @@ class ForexAnalyzer:
                 return "Sentimiento Bajista"
             return "Sentimiento Neutral"
 
-        # Si no se encuentran datos útiles, devolver este mensaje
-        print(f"No se encontraron datos útiles de sentimiento para el par {pair}.")
         return "Sin datos útiles de sentimiento"
 
     def analizar_par(self, pair):
@@ -89,6 +86,7 @@ class ForexAnalyzer:
         # Actualizar la tendencia del par en el diccionario interno
         self.last_trend[pair] = tendencia
 
+        # Imprimir solo el resultado final de la tendencia y el sentimiento
         return f"{symbol_polygon}: {tendencia}, {sentimiento}"
 
 # Uso del programa
@@ -99,4 +97,3 @@ if __name__ == "__main__":
     for pair in pairs:
         resultado = analyzer.analizar_par(pair)
         print(resultado)
-
