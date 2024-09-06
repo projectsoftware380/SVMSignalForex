@@ -12,6 +12,12 @@ class ForexReversalAnalyzer:
         self.api_key_polygon = api_key_polygon
         self.executor = ThreadPoolExecutor(max_workers=5)  # Maneja procesamiento paralelo
 
+    def normalizar_par(self, pair):
+        """
+        Normaliza el formato del par de divisas, eliminando guiones.
+        """
+        return pair.replace("-", "")
+
     def obtener_datos_bollinger(self, symbol):
         """
         Solicita los datos más recientes para calcular las Bandas de Bollinger.
@@ -55,16 +61,22 @@ class ForexReversalAnalyzer:
             return {}  # Detener la ejecución si el mercado está cerrado
 
         resultados = {}
-        futures = []
+        # Filtrar solo los pares con tendencia válida (alcista o bajista)
+        pares_validos = {self.normalizar_par(pair): tendencia for pair, tendencia in pares_tendencia.items() if tendencia != "No tendencia"}
+        
+        # Asegurar que siempre haya al menos un hilo disponible
+        num_pares_validos = len(pares_validos)
+        max_workers = max(1, min(10, num_pares_validos))  # Siempre al menos 1 hilo y máximo 10
 
-        for pair, tendencia in pares_tendencia.items():
-            if tendencia != "Neutral":
-                symbol_polygon = pair.replace("-", "")
-                future = self.executor.submit(self.analizar_reversion_para_par, symbol_polygon, tendencia, resultados, pair)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for pair, tendencia in pares_validos.items():
+                symbol_polygon = self.normalizar_par(pair)  # Normalizar símbolo
+                future = executor.submit(self.analizar_reversion_para_par, symbol_polygon, tendencia, resultados, pair)
                 futures.append(future)
 
-        for future in futures:
-            future.result()
+            for future in futures:
+                future.result()
 
         return resultados
 
@@ -77,28 +89,10 @@ class ForexReversalAnalyzer:
             resultado_reversion = self.detectar_reversion(df, tendencia)
             if resultado_reversion:
                 if isinstance(resultados, dict):
-                    resultados[pair] = resultado_reversion
+                    resultados[self.normalizar_par(pair)] = resultado_reversion  # Normalizar el par aquí también
                     # Imprimir solo cuando se detecta una reversión válida
                     print(f"Reversión detectada para {pair}: {resultado_reversion}")
-                    # Interactuar con MetaTrader5Executor para procesar la reversión
-                    self.mt5_executor.procesar_reversion(pair, resultado_reversion)
         except ValueError as e:
             print(f"Error en el análisis para {pair}: {str(e)}")
         except TypeError as e:
             print(f"Error de tipo en {pair}: {str(e)}")
-
-# Uso del programa
-if __name__ == "__main__":
-    data_fetcher = DataFetcher("0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
-    mt5_executor = MetaTrader5Executor(None)  # Asegúrate de tener esta clase disponible
-    reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
-    
-    # Simulación de datos de tendencia para pares de divisas
-    pares_tendencia_simulada = {
-        "GBP-USD": "Tendencia Alcista",
-        "USD-JPY": "Tendencia Bajista",
-        "EUR-USD": "Tendencia Alcista"
-    }
-    
-    resultado_reversiones = reversal_analyzer.analizar_reversiones(pares_tendencia_simulada)
-    print(f"Reversiones detectadas: {resultado_reversiones}")

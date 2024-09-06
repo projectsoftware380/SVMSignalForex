@@ -10,9 +10,15 @@ import json
 
 # Banderas para controlar las impresiones
 imprimir_tendencias = False
-imprimir_reversiones = True
+imprimir_reversiones = False
 imprimir_senales = True
-imprimir_cierres = False  # No imprimir en monitorear_cierres
+imprimir_cierres = True  # No imprimir en monitorear_cierres
+
+def normalizar_par(pair):
+    """
+    Normaliza el formato del par de divisas, eliminando guiones para que siempre se utilice sin guiones.
+    """
+    return pair.replace("-", "")
 
 def main():
     # Cargar configuración desde un archivo JSON
@@ -30,7 +36,7 @@ def main():
     mt5_executor.close_conditions = close_conditions
 
     # Instanciar las demás clases
-    forex_analyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'], config['api_key_polygon'])
+    forex_analyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'], config['api_key_polygon'], config['pairs'])  # Agregar config['pairs']
     forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
     forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
 
@@ -49,10 +55,21 @@ def main():
                     continue
 
                 # Analizar tendencias
-                pares_tendencia = {pair: forex_analyzer.analizar_par(pair) for pair in config['pairs']}
+                pares_tendencia = {}
+                for pair in config['pairs']:
+                    tendencia = forex_analyzer.analizar_par(pair)
+
+                    # Normalizar todos los pares eliminando los guiones
+                    pair_normalizado = normalizar_par(pair)
+
+                    pares_tendencia[pair_normalizado] = tendencia
+
+                # Imprimir las tendencias
                 if imprimir_tendencias:
                     for pair, tendencia in pares_tendencia.items():
                         print(f"Tendencia para {pair}: {tendencia}")
+
+                # Evaluar reversiones con las tendencias
                 evaluar_reversiones(pares_tendencia)
             except Exception as e:
                 if imprimir_tendencias:
@@ -83,10 +100,11 @@ def main():
                 # Monitorear las posiciones abiertas para verificar si deben cerrarse
                 for posicion in mt5_executor.obtener_posiciones_abiertas():
                     symbol = posicion['symbol']
-                    nueva_tendencia = forex_analyzer.analizar_par(symbol)
-                    if close_conditions.verificar_cierre_por_condiciones(symbol, nueva_tendencia):
+                    symbol_normalizado = normalizar_par(symbol)
+                    nueva_tendencia = forex_analyzer.analizar_par(symbol_normalizado)
+                    if close_conditions.verificar_cierre_por_condiciones(symbol_normalizado, nueva_tendencia):
                         if imprimir_cierres:
-                            print(f"Cerrando posición para {symbol}")
+                            print(f"Cerrando posición para {symbol_normalizado}")
                         mt5_executor.cerrar_posicion(symbol, posicion['ticket'])
             except Exception as e:
                 if imprimir_cierres:
@@ -107,4 +125,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("Proceso interrumpido manualmente.")
     finally:
-        mt5_executor.cerrar_conexion()
+        if 'mt5_executor' in locals():
+            mt5_executor.cerrar_conexion()
+
