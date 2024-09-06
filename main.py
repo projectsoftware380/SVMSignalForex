@@ -12,7 +12,7 @@ import json
 imprimir_tendencias = True
 imprimir_reversiones = False
 imprimir_senales = True
-imprimir_cierres = True  # No imprimir en monitorear_cierres
+imprimir_cierres = False  # No imprimir en monitorear_cierres
 
 def normalizar_par(pair):
     """
@@ -26,7 +26,7 @@ def main():
         config = json.load(config_file)
 
     # Crear una instancia de DataFetcher
-    data_fetcher = DataFetcher(config['api_key_polygon'])
+    data_fetcher = DataFetcher(config['api_key_polygon'], config['api_token_forexnews'])
 
     # Instanciar MetaTrader5Executor
     mt5_executor = MetaTrader5Executor(None)
@@ -35,8 +35,8 @@ def main():
     close_conditions = TradeCloseConditions(mt5_executor)
     mt5_executor.close_conditions = close_conditions
 
-    # Instanciar las demás clases
-    forex_analyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'], config['api_key_polygon'], config['pairs'])  # Agregar config['pairs']
+    # Instanciar las demás clases con la opción de usar sentimiento de mercado o no
+    forex_analyzer = ForexAnalyzer(data_fetcher, config['api_token_forexnews'], config['api_key_polygon'], config['pairs'], config.get('usar_sentimiento_mercado', True))
     forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
     forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
 
@@ -128,4 +128,3 @@ if __name__ == "__main__":
     finally:
         if 'mt5_executor' in locals():
             mt5_executor.cerrar_conexion()
-

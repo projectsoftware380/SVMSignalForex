@@ -35,17 +35,26 @@ class ForexReversalAnalyzer:
         if bollinger is None or 'BBM_20_2.0' not in bollinger:
             raise ValueError("No se pudo calcular las Bandas de Bollinger.")
 
+        # Agregar las Bandas de Bollinger al dataframe
         df['mid'] = bollinger['BBM_20_2.0']  # Línea central de las Bandas de Bollinger
+        df['upper'] = bollinger['BBU_20_2.0']  # Banda superior
+        df['lower'] = bollinger['BBL_20_2.0']  # Banda inferior
+
         precio_actual = df['Close'].iloc[-1]
         linea_central = df['mid'].iloc[-1]
 
+        print(f"Precio actual: {precio_actual}, Línea central: {linea_central}, Tendencia: {tendencia}")
+
         # Reversión alcista si el precio está por debajo de la línea central
         if tendencia == "Tendencia Alcista" and precio_actual < linea_central:
+            print(f"Reversión Alcista Detectada para {df.name}")
             return "Reversión Alcista Detectada"
         # Reversión bajista si el precio está por encima de la línea central
         elif tendencia == "Tendencia Bajista" and precio_actual > linea_central:
+            print(f"Reversión Bajista Detectada para {df.name}")
             return "Reversión Bajista Detectada"
-        return None  # Si no se detecta reversión
+        
+        return None  # Si no se detecta ninguna reversión
 
     def verificar_estado_mercado(self):
         """

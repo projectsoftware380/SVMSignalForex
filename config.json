@@ -4,8 +4,6 @@
     "loop_interval": 60,
     "tendencia_interval": 300,
     "cierre_interval": 180,
-    "pairs": ["XAU-USD", "EUR-USD", "GBP-USD", "USD-JPY", "AUD-USD", "XAG-USD", "USD-CAD", "NZD-USD", "EUR-GBP", "USD-CHF", "USD-CNH", "GBP-JPY", "GBP-AUD", "EUR-JPY", "EUR-CHF", "AUD-JPY", "EUR-AUD", "GBP-CAD", "GBP-EUR", "GBP-CHF", "GBP-NZD", "USD-TRY", "AUD-NZD", "NZD-JPY", "CAD-JPY", "USD-SGD"],
-    "lot_size": 0.1,
-    "stop_loss_multiplier": 2,
-    "take_profit_multiplier": 4
+    "pairs": ["EUR-USD", "GBP-USD", "USD-CHF"],
+    "usar_sentimiento_mercado": false
 }

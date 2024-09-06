@@ -1,15 +1,15 @@
 import requests
-import pandas as pd
 import pandas_ta as ta
 from datetime import datetime, timedelta
 from DataFetcher import DataFetcher
 
 class ForexAnalyzer:
-    def __init__(self, data_fetcher, api_token_forexnews, api_key_polygon, pairs):
+    def __init__(self, data_fetcher, api_token_forexnews, api_key_polygon, pairs, usar_sentimiento_mercado=True):
         self.data_fetcher = data_fetcher
         self.api_token_forexnews = api_token_forexnews
         self.api_key_polygon = api_key_polygon
         self.pairs = pairs  # Mantener los pares originales con guiones para la API
+        self.usar_sentimiento_mercado = usar_sentimiento_mercado
         self.last_trend = {}  # Almacena solo las tendencias alcistas o bajistas de cada par
 
     def verificar_estado_mercado(self):
@@ -48,59 +48,25 @@ class ForexAnalyzer:
 
     def obtener_sentimiento(self, pair):
         """
-        Obtiene el sentimiento del mercado para un par de divisas desde la API de ForexNews.
-        Si no se encuentran suficientes datos, se busca el sentimiento en otros pares correlacionados.
+        Obtiene el sentimiento del mercado para un par de divisas si está habilitado, de lo contrario omite esta función.
         """
-        def solicitar_sentimiento(pair):
-            """
-            Solicita los datos de sentimiento del mercado para el par especificado.
-            """
-            url = f"https://forexnewsapi.com/api/v1/stat?currencypair={pair}&date=last30days&page=1&token={self.api_token_forexnews}"
-            response = requests.get(url)
-            if response.status_code != 200:
-                return 0  # Sin sentimiento
-
-            data = response.json().get('data', {})
-            if not data:
-                return 0  # Sin sentimiento
-
-            for fecha, sentimiento_par in data.items():
-                sentiment_score = sentimiento_par.get(pair, {}).get('sentiment_score', 0)
-                if sentiment_score > 0:
-                    return 1  # Sentimiento Alcista
-                elif sentiment_score < 0:
-                    return 2  # Sentimiento Bajista
-                return 0  # Sentimiento Neutral
-            return 0  # Sin sentimiento útil
-
-        sentimiento = solicitar_sentimiento(pair)
-        if sentimiento != 0:
-            return sentimiento
-
-        # Si no hay datos, buscar entre los pares correlacionados
-        correlaciones = self.calcular_correlaciones(pair)
-
-        # Iterar sobre los pares correlacionados, ordenados por mayor correlación
-        for correlacionado in correlaciones:
-            sentimiento = solicitar_sentimiento(correlacionado)
-            if sentimiento != 0:
-                return sentimiento
-
-        return 0  # Sin datos de sentimiento después de buscar correlacionados
-
-    def calcular_correlaciones(self, pair):
-        """
-        Calcula las correlaciones dinámicas entre los pares. Aquí simulamos una lista ordenada de pares
-        correlacionados, pero en un sistema real deberíamos calcularlo usando datos históricos.
-        """
-        # Simulación: devolver la lista de pares excepto el mismo
-        correlaciones_ordenadas = [p for p in self.pairs if p != pair]
-        return correlaciones_ordenadas
+        if not self.usar_sentimiento_mercado:
+            return 0  # Si no se utiliza el sentimiento del mercado, devuelve un valor neutral
+        
+        # Código para obtener el sentimiento del mercado de Forex News API
+        datos_forex_news = self.data_fetcher.solicitar_datos_forex_news(pair)
+        if datos_forex_news:
+            sentimiento_par = datos_forex_news.get('data', {}).get(pair, {}).get('sentiment_score', 0)
+            if sentimiento_par > 0:
+                return 1  # Sentimiento Alcista
+            elif sentimiento_par < 0:
+                return 2  # Sentimiento Bajista
+        return 0  # Sentimiento Neutral
 
     def analizar_par(self, pair):
         """
         Analiza el par de divisas para determinar la tendencia técnica y el sentimiento del mercado.
-        Combina ambos resultados para generar una tendencia final solo si hay una tendencia clara.
+        Si no se utiliza el sentimiento del mercado, solo se basa en los indicadores técnicos.
         """
         if not self.verificar_estado_mercado():
             return "Neutral"  # Siempre devolver un valor significativo
@@ -113,13 +79,13 @@ class ForexAnalyzer:
         # Determinar la tendencia técnica
         tendencia_tecnica = self.determinar_tendencia_tecnica(df)
 
-        # Obtener el sentimiento del mercado
+        # Obtener el sentimiento del mercado solo si está habilitado
         sentimiento = self.obtener_sentimiento(pair)
 
         # Combinar resultados para generar la tendencia final
-        if tendencia_tecnica == 1 and sentimiento == 1:
+        if tendencia_tecnica == 1 and (sentimiento == 1 or not self.usar_sentimiento_mercado):
             tendencia_final = "Tendencia Alcista"
-        elif tendencia_tecnica == 2 and sentimiento == 2:
+        elif tendencia_tecnica == 2 and (sentimiento == 2 or not self.usar_sentimiento_mercado):
             tendencia_final = "Tendencia Bajista"
         else:
             tendencia_final = "Neutral"  # Cambiado para devolver siempre un valor
@@ -141,9 +107,9 @@ class ForexAnalyzer:
             for pair, tendencia in self.last_trend.items():
                 print(f"Tendencia para {pair}: {tendencia}")
 
-# Ejemplo de uso
-data_fetcher = DataFetcher("api_key")
-analyzer = ForexAnalyzer(data_fetcher, "api_token", "api_key", ["EUR-USD", "GBP-USD"])
+# Ejemplo de uso con solo indicadores técnicos
+data_fetcher = DataFetcher("tu_polygon_api_key", "tu_forexnews_api_token")
+analyzer = ForexAnalyzer(data_fetcher, "api_token", "api_key", ["EUR-USD", "GBP-USD"], usar_sentimiento_mercado=False)
 analyzer.analizar_par("EUR-USD")
 analyzer.analizar_par("GBP-USD")
 analyzer.imprimir_diccionario_resultados()
