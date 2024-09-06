@@ -9,7 +9,7 @@ from DataFetcher import DataFetcher
 import json
 
 # Banderas para controlar las impresiones
-imprimir_tendencias = False
+imprimir_tendencias = True
 imprimir_reversiones = False
 imprimir_senales = True
 imprimir_cierres = True  # No imprimir en monitorear_cierres
@@ -64,10 +64,11 @@ def main():
 
                     pares_tendencia[pair_normalizado] = tendencia
 
-                # Imprimir las tendencias
+                # Imprimir solo las tendencias alcistas o bajistas
                 if imprimir_tendencias:
                     for pair, tendencia in pares_tendencia.items():
-                        print(f"Tendencia para {pair}: {tendencia}")
+                        if tendencia in ["Tendencia Alcista", "Tendencia Bajista"]:
+                            print(f"Tendencia para {pair}: {tendencia}")
 
                 # Evaluar reversiones con las tendencias
                 evaluar_reversiones(pares_tendencia)
