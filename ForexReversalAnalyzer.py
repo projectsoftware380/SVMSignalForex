@@ -43,7 +43,7 @@ class ForexReversalAnalyzer:
         precio_actual = df['Close'].iloc[-1]
         linea_central = df['mid'].iloc[-1]
 
-        print(f"Precio actual: {precio_actual}, Línea central: {linea_central}, Tendencia: {tendencia}")
+        # print(f"Precio actual: {precio_actual}, Línea central: {linea_central}, Tendencia: {tendencia}")
 
         # Reversión alcista si el precio está por debajo de la línea central
         if tendencia == "Tendencia Alcista" and precio_actual < linea_central:

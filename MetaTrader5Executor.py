@@ -1,5 +1,4 @@
 import MetaTrader5 as mt5
-import threading
 
 class MetaTrader5Executor:
     def __init__(self, close_conditions):
@@ -68,7 +67,10 @@ class MetaTrader5Executor:
         if self.verificar_operacion_existente(symbol, order_type):
             return  # Si ya hay una operación del mismo tipo, no ejecutar otra
 
+        # Obtener el precio actual
         price = mt5.symbol_info_tick(symbol).ask if order_type == "buy" else mt5.symbol_info_tick(symbol).bid
+
+        # Crear la solicitud de la orden
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
@@ -81,6 +83,8 @@ class MetaTrader5Executor:
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_FOK,
         }
+
+        # Enviar la orden a MetaTrader 5
         result = mt5.order_send(request)
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             print(f"Error al ejecutar orden: {mt5.last_error()}")
