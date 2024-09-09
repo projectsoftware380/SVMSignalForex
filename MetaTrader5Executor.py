@@ -43,12 +43,30 @@ class MetaTrader5Executor:
 
         return [{'symbol': posicion.symbol, 'ticket': posicion.ticket, 'type': posicion.type} for posicion in posiciones]
 
+    def verificar_operacion_existente(self, symbol, order_type):
+        """
+        Verifica si ya existe una operación del mismo tipo (compra/venta) para un símbolo.
+        :param symbol: Símbolo de la divisa.
+        :param order_type: Tipo de la orden ('buy' o 'sell').
+        :return: True si ya existe una operación del mismo tipo, False si no existe.
+        """
+        if symbol in self.operaciones_abiertas:
+            tipo_operacion = self.operaciones_abiertas[symbol]['tipo']
+            if (tipo_operacion == 'compra' and order_type == 'buy') or (tipo_operacion == 'venta' and order_type == 'sell'):
+                print(f"Ya existe una operación {order_type.upper()} abierta para {symbol}. No se abrirá otra.")
+                return True
+        return False
+
     def ejecutar_orden(self, symbol, order_type):
         """
-        Ejecuta una orden de compra o venta en MetaTrader 5.
+        Ejecuta una orden de compra o venta en MetaTrader 5, solo si no hay una operación abierta del mismo tipo.
         """
         if not self.conectado or not self.seleccionar_simbolo(symbol):
             return
+
+        # Verificar si ya existe una operación del mismo tipo
+        if self.verificar_operacion_existente(symbol, order_type):
+            return  # Si ya hay una operación del mismo tipo, no ejecutar otra
 
         price = mt5.symbol_info_tick(symbol).ask if order_type == "buy" else mt5.symbol_info_tick(symbol).bid
         request = {
