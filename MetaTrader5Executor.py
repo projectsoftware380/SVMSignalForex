@@ -2,7 +2,7 @@ import MetaTrader5 as mt5
 import pandas as pd
 
 class MetaTrader5Executor:
-    def __init__(self, close_conditions, atr_period=14, atr_factor=1.5, atr_timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, close_conditions, atr_period=14, atr_factor=2.0, atr_timeframe=mt5.TIMEFRAME_M15):
         self.conectado = False
         self.operaciones_abiertas = {}  # Guardar las operaciones activas para monitoreo
         self.close_conditions = close_conditions  # Instancia de la clase TradeCloseConditions
@@ -22,18 +22,19 @@ class MetaTrader5Executor:
         return True
 
     def sincronizar_operaciones_existentes(self):
-        """ Sincroniza las posiciones abiertas de MetaTrader 5 con el diccionario 'operaciones_abiertas'. """
+        """ Sincroniza las posiciones abiertas de MetaTrader 5 con el diccionario 'operaciones_abiertas' y calcula el stop loss. """
         posiciones = self.obtener_posiciones_abiertas()
         for posicion in posiciones:
             symbol = posicion['symbol']
             tipo_operacion = 'compra' if posicion['type'] == mt5.ORDER_TYPE_BUY else 'venta'
-            # Asumimos que el stop loss será monitoreado a partir de aquí
             price = posicion['price_open']
-            atr_value = self.obtener_atr(symbol)
+            atr_value = self.obtener_atr(symbol)  # Recalcular el ATR para asignar un stop loss dinámico
             if atr_value:
                 stop_loss = price - (self.atr_factor * atr_value) if tipo_operacion == 'compra' else price + (self.atr_factor * atr_value)
                 self.operaciones_abiertas[symbol] = {'id': posicion['ticket'], 'tipo': tipo_operacion, 'precio_entrada': price, 'stop_loss': stop_loss}
-            print(f"Operación sincronizada: {symbol}, Tipo: {tipo_operacion}, Precio de entrada: {price}")
+                print(f"Operación sincronizada: {symbol}, Tipo: {tipo_operacion}, Precio de entrada: {price}, Stop loss: {stop_loss}")
+            else:
+                print(f"Error al calcular el ATR para {symbol}. Operación no sincronizada correctamente.")
 
     def obtener_posiciones_abiertas(self):
         """ Devuelve una lista de las posiciones abiertas actualmente en formato de diccionario. """
@@ -42,6 +43,16 @@ class MetaTrader5Executor:
             print("No hay posiciones abiertas.")
             return []
         return [{'symbol': posicion.symbol, 'ticket': posicion.ticket, 'type': posicion.type, 'price_open': posicion.price_open} for posicion in posiciones]
+
+    def verificar_operacion_existente(self, symbol, order_type):
+        """ Verifica si ya existe una operación del mismo tipo (compra/venta) para un símbolo. """
+        # Verificar en la lista local de operaciones abiertas
+        if symbol in self.operaciones_abiertas:
+            tipo_operacion = self.operaciones_abiertas[symbol]['tipo']
+            if (tipo_operacion == 'compra' and order_type == 'buy') or (tipo_operacion == 'venta' and order_type == 'sell'):
+                print(f"Ya existe una operación {order_type.upper()} abierta para {symbol}. No se abrirá otra.")
+                return True
+        return False
 
     def obtener_atr(self, symbol):
         """ Calcula el ATR (Average True Range) para un símbolo en la temporalidad configurada. """
@@ -62,6 +73,7 @@ class MetaTrader5Executor:
 
         # Verificar si ya existe una operación del mismo tipo
         if self.verificar_operacion_existente(symbol, order_type):
+            print(f"Operación ya existente: {symbol}, {order_type}. No se abrirá otra operación.")
             return  # Si ya hay una operación del mismo tipo, no ejecutar otra
 
         # Obtener el precio actual
@@ -97,22 +109,16 @@ class MetaTrader5Executor:
     def monitorear_stop_loss(self):
         """ Monitorea las operaciones abiertas y cierra las que alcancen el stop loss dinámico. """
         for symbol, data in self.operaciones_abiertas.items():
-            # Obtener el precio actual
-            price_actual = mt5.symbol_info_tick(symbol).ask if data['tipo'] == 'compra' else mt5.symbol_info_tick(symbol).bid
-            
-            # Verificar si el precio actual ha alcanzado o excedido el stop loss
-            if (data['tipo'] == 'compra' and price_actual <= data['stop_loss']) or (data['tipo'] == 'venta' and price_actual >= data['stop_loss']):
-                print(f"Stop loss alcanzado para {symbol}. Cerrando posición.")
-                self.cerrar_posicion(symbol, data['id'])
-
-    def verificar_operacion_existente(self, symbol, order_type):
-        """ Verifica si ya existe una operación del mismo tipo (compra/venta) para un símbolo. """
-        if symbol in self.operaciones_abiertas:
-            tipo_operacion = self.operaciones_abiertas[symbol]['tipo']
-            if (tipo_operacion == 'compra' and order_type == 'buy') or (tipo_operacion == 'venta' and order_type == 'sell'):
-                print(f"Ya existe una operación {order_type.upper()} abierta para {symbol}. No se abrirá otra.")
-                return True
-        return False
+            try:
+                # Obtener el precio actual
+                price_actual = mt5.symbol_info_tick(symbol).ask if data['tipo'] == 'compra' else mt5.symbol_info_tick(symbol).bid
+                
+                # Verificar si el precio actual ha alcanzado o excedido el stop loss
+                if (data['tipo'] == 'compra' and price_actual <= data['stop_loss']) or (data['tipo'] == 'venta' and price_actual >= data['stop_loss']):
+                    print(f"Stop loss alcanzado para {symbol}. Cerrando posición.")
+                    self.cerrar_posicion(symbol, data['id'])
+            except KeyError:
+                print(f"Error: No se encontró el stop_loss para {symbol}. Saltando la operación.")
 
     def cerrar_posicion(self, symbol, ticket):
         """ Cierra una posición en MetaTrader 5 basada en el ticket de la posición. """
