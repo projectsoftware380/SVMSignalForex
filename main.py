@@ -112,13 +112,35 @@ def main():
                     print(f"Error durante el monitoreo de cierres: {str(e)}")
             time.sleep(config.get('cierre_interval', 180))
 
+    def monitorear_stop_loss():
+        """
+        Monitorea las operaciones abiertas y cierra las que alcancen el stop loss dinámico.
+        """
+        while True:
+            try:
+                # Verificar si el mercado está abierto
+                if not data_fetcher.obtener_estado_mercado():
+                    time.sleep(config.get('loop_interval', 60))
+                    continue
+
+                # Monitorear stop loss en las posiciones abiertas
+                mt5_executor.monitorear_stop_loss()
+            except Exception as e:
+                print(f"Error durante el monitoreo de stop loss: {str(e)}")
+            time.sleep(config.get('stop_loss_interval', 60))  # Intervalo de monitoreo de stop loss
+
     # Iniciar hilos paralelos
     hilo_tendencias = threading.Thread(target=evaluar_tendencias)
     hilo_cierres = threading.Thread(target=monitorear_cierres)
+    hilo_stop_loss = threading.Thread(target=monitorear_stop_loss)  # Nuevo hilo para monitoreo de stop loss
+
     hilo_tendencias.start()
     hilo_cierres.start()
+    hilo_stop_loss.start()  # Iniciar hilo de monitoreo de stop loss
+
     hilo_tendencias.join()
     hilo_cierres.join()
+    hilo_stop_loss.join()  # Esperar a que termine el hilo de monitoreo de stop loss
 
 if __name__ == "__main__":
     try:
@@ -128,3 +150,4 @@ if __name__ == "__main__":
     finally:
         if 'mt5_executor' in locals():
             mt5_executor.cerrar_conexion()
+
