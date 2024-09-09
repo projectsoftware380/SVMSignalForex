@@ -4,18 +4,23 @@ from datetime import datetime, timedelta
 from DataFetcher import DataFetcher
 
 class ForexAnalyzer:
-    def __init__(self, data_fetcher, api_token_forexnews, api_key_polygon, pairs, usar_sentimiento_mercado=True):
+    def __init__(self, data_fetcher, api_token_forexnews, api_key_polygon, pairs, usar_sentimiento_mercado=False, backtesting=False):
         self.data_fetcher = data_fetcher
         self.api_token_forexnews = api_token_forexnews
         self.api_key_polygon = api_key_polygon
         self.pairs = pairs  # Mantener los pares originales con guiones para la API
         self.usar_sentimiento_mercado = usar_sentimiento_mercado
+        self.backtesting = backtesting  # Indicador de si estamos en modo de backtesting
         self.last_trend = {}  # Almacena solo las tendencias alcistas o bajistas de cada par
+        self.resultados_backtesting = []  # Almacena los resultados del backtesting
 
     def verificar_estado_mercado(self):
         """
         Verifica si el mercado Forex está abierto utilizando la API de Polygon.io.
+        Para el modo de backtesting, no se utiliza esta función.
         """
+        if self.backtesting:
+            return True  # En modo de backtesting, el estado del mercado no es relevante
         url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
         response = requests.get(url)
         if response.status_code != 200:
@@ -46,32 +51,15 @@ class ForexAnalyzer:
             return 2  # Tendencia Técnica Bajista
         return 0  # No tendencia técnica
 
-    def obtener_sentimiento(self, pair):
-        """
-        Obtiene el sentimiento del mercado para un par de divisas si está habilitado, de lo contrario omite esta función.
-        """
-        if not self.usar_sentimiento_mercado:
-            return 0  # Si no se utiliza el sentimiento del mercado, devuelve un valor neutral
-        
-        # Código para obtener el sentimiento del mercado de Forex News API
-        datos_forex_news = self.data_fetcher.solicitar_datos_forex_news(pair)
-        if datos_forex_news:
-            sentimiento_par = datos_forex_news.get('data', {}).get(pair, {}).get('sentiment_score', 0)
-            if sentimiento_par > 0:
-                return 1  # Sentimiento Alcista
-            elif sentimiento_par < 0:
-                return 2  # Sentimiento Bajista
-        return 0  # Sentimiento Neutral
-
     def analizar_par(self, pair):
         """
-        Analiza el par de divisas para determinar la tendencia técnica y el sentimiento del mercado.
-        Si no se utiliza el sentimiento del mercado, solo se basa en los indicadores técnicos.
+        Analiza el par de divisas para determinar la tendencia técnica.
         """
         if not self.verificar_estado_mercado():
             return "Neutral"  # Siempre devolver un valor significativo
 
         symbol_polygon = pair.replace("-", "")
+        # En modo de backtesting, se puede definir una fecha específica o usar datos históricos
         df = self.data_fetcher.obtener_datos(symbol_polygon, 'hour', '1', 60)
         if df.empty:
             return "Neutral"  # Siempre devolver un valor significativo
@@ -79,13 +67,10 @@ class ForexAnalyzer:
         # Determinar la tendencia técnica
         tendencia_tecnica = self.determinar_tendencia_tecnica(df)
 
-        # Obtener el sentimiento del mercado solo si está habilitado
-        sentimiento = self.obtener_sentimiento(pair)
-
-        # Combinar resultados para generar la tendencia final
-        if tendencia_tecnica == 1 and (sentimiento == 1 or not self.usar_sentimiento_mercado):
+        # Si la tendencia técnica es alcista o bajista, se almacena y devuelve
+        if tendencia_tecnica == 1:
             tendencia_final = "Tendencia Alcista"
-        elif tendencia_tecnica == 2 and (sentimiento == 2 or not self.usar_sentimiento_mercado):
+        elif tendencia_tecnica == 2:
             tendencia_final = "Tendencia Bajista"
         else:
             tendencia_final = "Neutral"  # Cambiado para devolver siempre un valor
@@ -94,6 +79,14 @@ class ForexAnalyzer:
         if tendencia_final in ["Tendencia Alcista", "Tendencia Bajista"]:
             pair_formatted = pair.replace("-", "")
             self.last_trend[pair_formatted] = tendencia_final
+
+            # Si estamos en modo de backtesting, almacenamos los resultados
+            if self.backtesting:
+                self.resultados_backtesting.append({
+                    'pair': pair_formatted,
+                    'tendencia': tendencia_final,
+                    'timestamp': df.index[-1]
+                })
 
         return tendencia_final  # Siempre retornar un valor significativo
 
@@ -107,9 +100,23 @@ class ForexAnalyzer:
             for pair, tendencia in self.last_trend.items():
                 print(f"Tendencia para {pair}: {tendencia}")
 
-# Ejemplo de uso con solo indicadores técnicos
-data_fetcher = DataFetcher("tu_polygon_api_key", "tu_forexnews_api_token")
-analyzer = ForexAnalyzer(data_fetcher, "api_token", "api_key", ["EUR-USD", "GBP-USD"], usar_sentimiento_mercado=False)
-analyzer.analizar_par("EUR-USD")
-analyzer.analizar_par("GBP-USD")
-analyzer.imprimir_diccionario_resultados()
+    def realizar_backtesting(self):
+        """
+        Realiza el backtesting en todos los pares disponibles utilizando datos históricos.
+        """
+        for pair in self.pairs:
+            self.analizar_par(pair)
+
+        # Al finalizar el backtesting, imprime los resultados
+        self.imprimir_resultados_backtesting()
+
+    def imprimir_resultados_backtesting(self):
+        """
+        Imprime los resultados acumulados del backtesting.
+        """
+        if not self.resultados_backtesting:
+            print("No se encontraron resultados de backtesting.")
+        else:
+            print("\nResultados del Backtesting:")
+            for resultado in self.resultados_backtesting:
+                print(f"Par: {resultado['pair']}, Tendencia: {resultado['tendencia']}, Fecha: {resultado['timestamp']}")
