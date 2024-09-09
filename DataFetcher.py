@@ -1,5 +1,4 @@
 import requests
-import os
 from datetime import datetime, timedelta, timezone
 import pandas as pd
 
@@ -40,10 +39,11 @@ class DataFetcher:
         fecha_actual = datetime.now(timezone.utc)
         fecha_inicio = fecha_actual - timedelta(days=days)
 
+        # Ajustar la URL para obtener los datos desde la fecha actual hasta el número de días especificado
         url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/{range}/{timeframe}/{fecha_inicio.strftime('%Y-%m-%d')}/{fecha_actual.strftime('%Y-%m-%d')}"
         params = {
             "adjusted": "true",
-            "sort": "desc",
+            "sort": "asc",  # Asegurarnos de que los datos estén en orden cronológico
             "apiKey": self.api_key_polygon
         }
 
@@ -59,6 +59,10 @@ class DataFetcher:
             df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
             df.set_index('timestamp', inplace=True)
             df.rename(columns={'o': 'Open', 'h': 'High', 'l': 'Low', 'c': 'Close', 'v': 'Volume'}, inplace=True)
+            
+            # Imprimir el último precio recibido para verificar
+            # print(f"Par: {symbol}, Último dato: {df.index[-1]}, Precio de cierre más reciente: {df['Close'].iloc[-1]}")
+            
             return df[['Open', 'High', 'Low', 'Close', 'Volume']]
         else:
             raise ValueError(f"No se pudieron obtener datos de la API para {symbol}.")
@@ -69,6 +73,8 @@ estado_mercado = data_fetcher.obtener_estado_mercado()
 if estado_mercado:
     print("El mercado está abierto.")
     # Puedes agregar la lógica aquí para obtener datos históricos
+    symbol = "EURUSD"  # Ejemplo de símbolo
+    datos = data_fetcher.obtener_datos(symbol, 'hour', '1', 1)  # Último día
 else:
     print("Mercado cerrado")
 

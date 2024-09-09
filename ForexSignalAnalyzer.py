@@ -29,10 +29,10 @@ class ForexSignalAnalyzer:
         Genera señales de trading basadas en el RSI y las reversiones detectadas.
         """
         rsi = ta.rsi(df['Close'], length=14)
-        if rsi.iloc[-1] > 70 and reverso_tendencia == "Reversión Bajista Detectada":
-            return "Señal de Venta Detectada"
-        elif rsi.iloc[-1] < 30 and reverso_tendencia == "Reversión Alcista Detectada":
-            return "Señal de Compra Detectada"
+        if rsi.iloc[-1] > 70 and reverso_tendencia == "Reversión Bajista":
+            return "Señal de Venta"
+        elif rsi.iloc[-1] < 30 and reverso_tendencia == "Reversión Alcista":
+            return "Señal de Compra"
         return "No hay señal"
 
     def analizar_senales(self, pares_reversiones, imprimir_senales):
@@ -56,6 +56,7 @@ class ForexSignalAnalyzer:
             for future in futures:
                 future.result()
 
+        self.imprimir_diccionario_senales(resultados)  # Imprimir el diccionario de señales detectadas
         return resultados
 
     def analizar_senal_para_par(self, symbol_polygon, reverso_tendencia, resultados, pair, imprimir_senales):
@@ -77,6 +78,17 @@ class ForexSignalAnalyzer:
         except TypeError as e:
             print(f"Error de tipo en {pair}: {str(e)}")
 
+    def imprimir_diccionario_senales(self, resultados):
+        """
+        Imprime el diccionario de señales detectadas.
+        """
+        if not resultados:
+            print("No se detectaron señales para ningún par.")
+        else:
+            print("\nDiccionario de señales detectadas:")
+            for pair, senal in resultados.items():
+                print(f"{pair}: {senal}")
+
 # Uso del programa
 if __name__ == "__main__":
     data_fetcher = DataFetcher("0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
@@ -85,10 +97,11 @@ if __name__ == "__main__":
 
     # Simulación de datos de reversiones
     pares_reversiones_simuladas = {
-        "GBPUSD": "Reversión Alcista Detectada",
-        "USDJPY": "Reversión Bajista Detectada",
-        "EURUSD": "Reversión Alcista Detectada"
+        "GBPUSD": "Reversión Alcista",
+        "USDJPY": "Reversión Bajista",
+        "EURUSD": "Reversión Alcista"
     }
 
     resultado_senales = signal_analyzer.analizar_senales(pares_reversiones_simuladas, True)
     print(f"Señales detectadas: {resultado_senales}")
+

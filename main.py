@@ -25,7 +25,7 @@ def main():
     with open("config.json") as config_file:
         config = json.load(config_file)
 
-    # Crear una instancia de DataFetcher (solo se usa la API de Polygon)
+    # Crear una instancia de DataFetcher con la clave correcta
     data_fetcher = DataFetcher(config['api_key_polygon'])
 
     # Instanciar MetaTrader5Executor
@@ -35,8 +35,8 @@ def main():
     close_conditions = TradeCloseConditions(mt5_executor)
     mt5_executor.close_conditions = close_conditions
 
-    # Instanciar las demás clases sin sentimiento de mercado
-    forex_analyzer = ForexAnalyzer(data_fetcher, None, config['api_key_polygon'], config['pairs'], False)
+    # Instanciar las demás clases con los argumentos necesarios
+    forex_analyzer = ForexAnalyzer(data_fetcher, config['api_key_polygon'], config['pairs'])
     forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
     forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
 

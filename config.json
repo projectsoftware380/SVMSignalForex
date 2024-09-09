@@ -4,6 +4,13 @@
     "loop_interval": 60,
     "tendencia_interval": 300,
     "cierre_interval": 180,
-    "pairs": ["EUR-USD", "GBP-USD", "USD-CHF"],
+    "pairs": [
+        "EUR-USD", "GBP-USD", "USD-CHF", "USD-JPY", "AUD-USD", "NZD-USD", "USD-CAD",  
+        "EUR-GBP", "EUR-JPY", "GBP-JPY", "AUD-JPY", "CHF-JPY", "NZD-JPY", "CAD-JPY",  
+        "AUD-CAD", "GBP-CAD", "EUR-AUD", "EUR-CAD", "AUD-NZD", "GBP-AUD", "NZD-CAD",   
+        "USD-SEK", "USD-NOK", "USD-DKK", "EUR-SEK", "EUR-NOK", "EUR-DKK",               
+        "USD-MXN", "USD-ZAR", "USD-SGD", "USD-HKD", "USD-TRY", "EUR-TRY", "USD-CNH",    
+        "USD-RUB", "USD-CZK", "USD-PLN", "EUR-PLN", "EUR-HUF", "USD-HUF"                
+    ],
     "usar_sentimiento_mercado": false
 }

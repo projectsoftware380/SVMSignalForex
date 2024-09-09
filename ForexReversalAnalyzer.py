@@ -47,12 +47,10 @@ class ForexReversalAnalyzer:
 
         # Reversión alcista si el precio está por debajo de la línea central
         if tendencia == "Tendencia Alcista" and precio_actual < linea_central:
-            print(f"Reversión Alcista Detectada para {df.name}")
-            return "Reversión Alcista Detectada"
+            return "Reversión Alcista"
         # Reversión bajista si el precio está por encima de la línea central
         elif tendencia == "Tendencia Bajista" and precio_actual > linea_central:
-            print(f"Reversión Bajista Detectada para {df.name}")
-            return "Reversión Bajista Detectada"
+            return "Reversión Bajista"
         
         return None  # Si no se detecta ninguna reversión
 
@@ -87,6 +85,7 @@ class ForexReversalAnalyzer:
             for future in futures:
                 future.result()
 
+        self.imprimir_diccionario_reversiones(resultados)  # Imprimir el diccionario de reversiones
         return resultados
 
     def analizar_reversion_para_par(self, symbol_polygon, tendencia, resultados, pair):
@@ -97,11 +96,19 @@ class ForexReversalAnalyzer:
             df = self.obtener_datos_bollinger(symbol_polygon)
             resultado_reversion = self.detectar_reversion(df, tendencia)
             if resultado_reversion:
-                if isinstance(resultados, dict):
-                    resultados[self.normalizar_par(pair)] = resultado_reversion  # Normalizar el par aquí también
-                    # Imprimir solo cuando se detecta una reversión válida
-                    print(f"Reversión detectada para {pair}: {resultado_reversion}")
+                resultados[self.normalizar_par(pair)] = resultado_reversion  # Normalizar el par aquí también
         except ValueError as e:
             print(f"Error en el análisis para {pair}: {str(e)}")
         except TypeError as e:
             print(f"Error de tipo en {pair}: {str(e)}")
+
+    def imprimir_diccionario_reversiones(self, resultados):
+        """
+        Imprime el diccionario de las reversiones detectadas.
+        """
+        if not resultados:
+            print("No se detectaron reversiones para ningún par.")
+        else:
+            print("\nDiccionario de reversiones detectadas:")
+            for pair, reversion in resultados.items():
+                print(f"{pair}: {reversion}")
