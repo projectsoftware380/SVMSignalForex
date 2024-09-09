@@ -72,7 +72,7 @@ class MetaTrader5Executor:
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
-            "volume": 0.1,  # ejemplo de volumen
+            "volume": 1.0,  # ejemplo de volumen
             "type": mt5.ORDER_TYPE_BUY if order_type == "buy" else mt5.ORDER_TYPE_SELL,
             "price": price,
             "deviation": 20,
