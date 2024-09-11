@@ -1,12 +1,12 @@
 import time
 import threading
+import json
 from ForexAnalyzer import ForexAnalyzer
 from ForexReversalAnalyzer import ForexReversalAnalyzer
 from ForexSignalAnalyzer import ForexSignalAnalyzer
 from MetaTrader5Executor import MetaTrader5Executor
 from TradeCloseConditions import TradeCloseConditions
 from DataFetcher import DataFetcher
-import json
 
 # Banderas para controlar las impresiones
 imprimir_tendencias = True
@@ -129,18 +129,31 @@ def main():
                 print(f"Error durante el monitoreo de stop loss: {str(e)}")
             time.sleep(config.get('stop_loss_interval', 60))  # Intervalo de monitoreo de stop loss
 
+    def monitorear_balance():
+        """
+        Monitorea el balance global de la cuenta para detectar niveles de pérdidas o ganancias.
+        """
+        mt5_executor.monitorear_balance_global(
+            config['max_loss_level'],
+            config['profit_trailing_level'],
+            config['trailing_stop_percentage']
+        )
+
     # Iniciar hilos paralelos
     hilo_tendencias = threading.Thread(target=evaluar_tendencias)
     hilo_cierres = threading.Thread(target=monitorear_cierres)
-    hilo_stop_loss = threading.Thread(target=monitorear_stop_loss)  # Nuevo hilo para monitoreo de stop loss
+    hilo_stop_loss = threading.Thread(target=monitorear_stop_loss)
+    hilo_balance = threading.Thread(target=monitorear_balance)  # Nuevo hilo para monitoreo de balance
 
     hilo_tendencias.start()
     hilo_cierres.start()
-    hilo_stop_loss.start()  # Iniciar hilo de monitoreo de stop loss
+    hilo_stop_loss.start()
+    hilo_balance.start()
 
     hilo_tendencias.join()
     hilo_cierres.join()
-    hilo_stop_loss.join()  # Esperar a que termine el hilo de monitoreo de stop loss
+    hilo_stop_loss.join()
+    hilo_balance.join()
 
 if __name__ == "__main__":
     try:
@@ -150,4 +163,5 @@ if __name__ == "__main__":
     finally:
         if 'mt5_executor' in locals():
             mt5_executor.cerrar_conexion()
+
 

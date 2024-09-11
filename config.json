@@ -12,5 +12,8 @@
         "USD-MXN", "USD-ZAR", "USD-SGD", "USD-HKD", "USD-TRY", "EUR-TRY", "USD-CNH",    
         "USD-RUB", "USD-CZK", "USD-PLN", "EUR-PLN", "EUR-HUF", "USD-HUF"                
     ],
-    "usar_sentimiento_mercado": false
+    "usar_sentimiento_mercado": false,
+    "max_loss_level": -1000,  
+    "profit_trailing_level": 400,  
+    "trailing_stop_percentage": 10  
 }
