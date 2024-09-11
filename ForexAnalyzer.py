@@ -24,19 +24,25 @@ class ForexAnalyzer:
 
     def determinar_tendencia_tecnica(self, df):
         """
-        Determina la tendencia técnica de un par de divisas utilizando indicadores técnicos.
+        Determina la tendencia técnica de un par de divisas utilizando indicadores técnicos de Ichimoku.
         """
         if df.empty:
             return 0  # No hay datos suficientes para determinar tendencia
 
+        # Calcular los componentes de Ichimoku
         tenkan_sen = (self.calcular_sma(df['High'], 9) + self.calcular_sma(df['Low'], 9)) / 2
         kijun_sen = (self.calcular_sma(df['High'], 26) + self.calcular_sma(df['Low'], 26)) / 2
         senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(26)
         senkou_span_b = ((self.calcular_sma(df['High'], 52) + self.calcular_sma(df['Low'], 52)) / 2).shift(26)
 
-        if df['Close'].iloc[-1] > senkou_span_a.iloc[-1] and df['Close'].iloc[-1] > senkou_span_b.iloc[-1]:
+        # Verificar el orden de Senkou Span A y Senkou Span B
+        is_kumo_alcista = senkou_span_a.iloc[-1] > senkou_span_b.iloc[-1]
+        is_kumo_bajista = senkou_span_b.iloc[-1] > senkou_span_a.iloc[-1]
+
+        # Condiciones de tendencia
+        if df['Close'].iloc[-1] > senkou_span_a.iloc[-1] and df['Close'].iloc[-1] > senkou_span_b.iloc[-1] and is_kumo_alcista:
             return 1  # Tendencia Técnica Alcista
-        elif df['Close'].iloc[-1] < senkou_span_a.iloc[-1] and df['Close'].iloc[-1] < senkou_span_b.iloc[-1]:
+        elif df['Close'].iloc[-1] < senkou_span_a.iloc[-1] and df['Close'].iloc[-1] < senkou_span_b.iloc[-1] and is_kumo_bajista:
             return 2  # Tendencia Técnica Bajista
         return 0  # No hay tendencia técnica clara
 

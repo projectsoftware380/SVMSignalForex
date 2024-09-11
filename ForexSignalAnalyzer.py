@@ -22,7 +22,7 @@ class ForexSignalAnalyzer:
         """
         Obtiene datos para calcular el RSI, usando el DataFetcher para solicitar datos históricos.
         """
-        return self.data_fetcher.obtener_datos(symbol=symbol, timeframe='hour', range='1', days=14)
+        return self.data_fetcher.obtener_datos(symbol=symbol, timeframe='minute', range='3', days=1)
 
     def generar_senal_trading(self, df, reverso_tendencia):
         """
