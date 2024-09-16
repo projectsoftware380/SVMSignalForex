@@ -47,8 +47,8 @@ class ForexAnalyzer:
             print(f"Error: No se pudo calcular Senkou Span A o B para {pair}")
             return 0
 
-        # Obtener el precio de cierre más reciente
-        precio_cierre = self.data_fetcher.obtener_precio_cierre_mas_reciente(pair)
+        # Obtener el precio de cierre anterior (no el más reciente)
+        precio_cierre = self.data_fetcher.obtener_precio_cierre_anterior(pair)
 
         # Obtener los valores más recientes de Senkou Span A y B
         valor_senkou_span_a = senkou_span_a.iloc[-1]
@@ -56,7 +56,7 @@ class ForexAnalyzer:
 
         # Imprimir los valores para verificar
         print(f"\nPar de Divisas: {pair}")
-        print(f"Precio de Cierre: {precio_cierre}")
+        print(f"Precio de Cierre Anterior: {precio_cierre}")
         print(f"Senkou Span A: {valor_senkou_span_a}")
         print(f"Senkou Span B: {valor_senkou_span_b}")
 

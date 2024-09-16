@@ -26,6 +26,12 @@ class DataFetcher:
         else:
             raise ValueError("No se pudo determinar el estado del mercado Forex a partir de la respuesta de la API.")
 
+    def normalizar_par(self, symbol):
+        """
+        Elimina los guiones del símbolo del par de divisas (ej. convierte 'EUR-USD' a 'EURUSD').
+        """
+        return symbol.replace("-", "")
+
     def obtener_datos(self, symbol, timeframe='hour', range='1', days=1):
         """
         Obtiene los datos históricos para un símbolo específico en un timeframe dado.
@@ -36,6 +42,9 @@ class DataFetcher:
         :param days: Número de días de historia a recuperar.
         :return: DataFrame con los datos obtenidos.
         """
+        # Normalizar el símbolo eliminando guiones
+        symbol = self.normalizar_par(symbol)
+
         fecha_actual = datetime.now(timezone.utc)
         fecha_inicio = fecha_actual - timedelta(days=days)
 
@@ -60,22 +69,40 @@ class DataFetcher:
             df.set_index('timestamp', inplace=True)
             df.rename(columns={'o': 'Open', 'h': 'High', 'l': 'Low', 'c': 'Close', 'v': 'Volume'}, inplace=True)
             
-            # Imprimir el último precio recibido para verificar
-            # print(f"Par: {symbol}, Último dato: {df.index[-1]}, Precio de cierre más reciente: {df['Close'].iloc[-1]}")
-            
             return df[['Open', 'High', 'Low', 'Close', 'Volume']]
         else:
             raise ValueError(f"No se pudieron obtener datos de la API para {symbol}.")
 
+    def obtener_precio_cierre_anterior(self, symbol):
+        """
+        Obtiene el precio de cierre anterior para un par de divisas.
+        :param symbol: Símbolo del par de divisas (ej. 'EURUSD').
+        :return: Precio de cierre anterior.
+        """
+        # Obtenemos los datos históricos más recientes (último día por ejemplo)
+        df = self.obtener_datos(symbol, 'hour', '1', 1)
+        
+        if df.empty or len(df) < 2:
+            raise ValueError(f"No se encontraron suficientes datos para el par {symbol}")
+        
+        # Obtener el penúltimo precio de cierre
+        precio_cierre_anterior = df['Close'].iloc[-2]
+        return precio_cierre_anterior
+
 # Ejemplo de uso
-data_fetcher = DataFetcher("0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
-estado_mercado = data_fetcher.obtener_estado_mercado()
-if estado_mercado:
-    print("El mercado está abierto.")
-    # Puedes agregar la lógica aquí para obtener datos históricos
-    symbol = "EURUSD"  # Ejemplo de símbolo
-    datos = data_fetcher.obtener_datos(symbol, 'hour', '1', 1)  # Último día
-else:
-    print("Mercado cerrado")
+if __name__ == "__main__":
+    data_fetcher = DataFetcher("TU_API_KEY")
+    estado_mercado = data_fetcher.obtener_estado_mercado()
+    if estado_mercado:
+        print("El mercado está abierto.")
+        # Puedes agregar la lógica aquí para obtener datos históricos
+        symbol = "EUR-USD"  # Ejemplo de símbolo
+        try:
+            precio_cierre_anterior = data_fetcher.obtener_precio_cierre_anterior(symbol)
+            print(f"El precio de cierre anterior para {symbol} es {precio_cierre_anterior}")
+        except ValueError as e:
+            print(e)
+    else:
+        print("Mercado cerrado")
 
 
