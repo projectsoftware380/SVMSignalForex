@@ -4,30 +4,49 @@ import pandas_ta as ta
 from MetaTrader5Executor import MetaTrader5Executor
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+import pytz
 
 class ForexSignalAnalyzer:
     def __init__(self, mt5_executor, api_key_polygon):
         self.mt5_executor = mt5_executor  # Instancia del ejecutor de MetaTrader 5
         self.api_key_polygon = api_key_polygon
 
+    def obtener_hora_servidor(self):
+        """
+        Obtiene la hora actual del servidor de Polygon.io (en UTC o con zona horaria).
+        """
+        url = "https://api.polygon.io/v1/marketstatus/now?apiKey=" + self.api_key_polygon
+        response = requests.get(url)
+        if response.status_code == 200:
+            server_time = response.json().get("serverTime", None)
+            if server_time:
+                try:
+                    # Intentar con el formato UTC
+                    return datetime.strptime(server_time, '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
+                except ValueError:
+                    # Intentar con formato que incluye zona horaria
+                    return datetime.fromisoformat(server_time).astimezone(pytz.UTC)
+        return datetime.utcnow().replace(tzinfo=pytz.UTC)  # Fallback en caso de error
+
     def verificar_estado_mercado(self):
         """
         Verifica si el mercado Forex está abierto.
-        Para simplificar, esta función puede devolver siempre True, o puedes implementar lógica adicional
-        para verificar el horario de mercado.
         """
-        return True  # O la lógica que decidas implementar
+        return True  # Implementa la lógica si es necesario
 
     def obtener_datos_api(self, symbol, timeframe='minute', days=1):
         """
         Obtiene datos de la API de Polygon.io para el símbolo dado.
         """
         try:
-            # Calcular fechas de inicio y fin
-            fecha_final = datetime.now().strftime('%Y-%m-%d')
-            fecha_inicio = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            # Obtener la fecha del servidor para evitar problemas de desfase
+            fecha_final = self.obtener_hora_servidor()
+            fecha_inicio = fecha_final - timedelta(days=days)
 
-            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/1/{timeframe}/{fecha_inicio}/{fecha_final}"
+            start_date = fecha_inicio.strftime('%Y-%m-%d')
+            end_date = fecha_final.strftime('%Y-%m-%d')
+
+            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/1/{timeframe}/{start_date}/{end_date}"
             params = {
                 'apiKey': self.api_key_polygon,
                 'limit': 50000,
@@ -43,11 +62,15 @@ class ForexSignalAnalyzer:
 
                 # Crear DataFrame con los valores de "High", "Low", "Close" y "Open"
                 df = pd.DataFrame(data)
-                df['timestamp'] = pd.to_datetime(df['t'], unit='ms')
+                df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
                 df.set_index('timestamp', inplace=True)
                 df.rename(columns={'h': 'High', 'l': 'Low', 'c': 'Close', 'o': 'Open'}, inplace=True)
 
-                return df[['High', 'Low', 'Close', 'Open']]  # Devolver solo columnas relevantes
+                # Verificar que la última vela esté completa, si no, tomar la penúltima
+                if (fecha_final - df.index[-1]).total_seconds() < 60:
+                    df = df.iloc[:-1]  # Remover la última vela incompleta
+
+                return df[['High', 'Low', 'Close', 'Open']]
             else:
                 print(f"Error al obtener datos: {response.status_code}")
                 return pd.DataFrame()
@@ -79,8 +102,8 @@ class ForexSignalAnalyzer:
             if rsi is None or rsi.empty:
                 raise ValueError("No se pudo calcular el RSI.")
             
-            ultimo_rsi = rsi.iloc[-1]
-            print(f"RSI para {df.index[-1]}: {ultimo_rsi}")
+            ultimo_rsi = rsi.iloc[-2]  # Usar la penúltima vela para el cálculo del RSI
+            print(f"RSI para {df.index[-2]}: {ultimo_rsi}")
 
             if ultimo_rsi > 80 and reverso_tendencia == "Reversión Bajista":
                 return "Señal de Venta"

@@ -1,12 +1,31 @@
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
+import pytz
 
 class ForexAnalyzer:
     def __init__(self, api_key_polygon, pairs):
         self.api_key_polygon = api_key_polygon
         self.pairs = pairs  # Lista de pares de divisas para analizar
         self.last_trend = {}  # Almacena solo las tendencias alcistas o bajistas de cada par
+
+    def obtener_hora_servidor(self):
+        """
+        Obtiene la hora actual del servidor de Polygon.io (en UTC o con zona horaria).
+        """
+        url = "https://api.polygon.io/v1/marketstatus/now?apiKey=" + self.api_key_polygon
+        response = requests.get(url)
+        if response.status_code == 200:
+            server_time = response.json().get("serverTime", None)
+            if server_time:
+                try:
+                    # Intentar primero con el formato UTC (con 'Z')
+                    return datetime.strptime(server_time, '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
+                except ValueError:
+                    # Si falla, intentar con formato que incluye zona horaria
+                    return datetime.fromisoformat(server_time).astimezone(pytz.UTC)
+        # Si hay algún problema con la solicitud o respuesta, utilizar UTC local como fallback
+        return datetime.utcnow().replace(tzinfo=pytz.UTC)
 
     def obtener_datos_polygon(self, symbol, timeframe='hour', start_date=None, end_date=None):
         """
@@ -28,11 +47,11 @@ class ForexAnalyzer:
 
             # Crear DataFrame con los valores de "High", "Low", "Close" y "Open"
             df = pd.DataFrame(data)
-            df['timestamp'] = pd.to_datetime(df['t'], unit='ms')
+            df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)  # Asegurarse de que esté en UTC
             df.set_index('timestamp', inplace=True)
             df.rename(columns={'h': 'High', 'l': 'Low', 'c': 'Close', 'o': 'Open'}, inplace=True)
 
-            print(f"Data obtenida correctamente para {symbol}: {df.shape[0]} filas.")
+            print(f"Datos obtenidos correctamente para {symbol}: {df.shape[0]} filas.")
             return df[['High', 'Low', 'Close', 'Open']]  # Incluimos 'Open' también
         else:
             print(f"Error: No se pudieron obtener los datos para {symbol}. Código de estado {response.status_code}")
@@ -68,16 +87,17 @@ class ForexAnalyzer:
         Obtiene datos históricos válidos para el análisis técnico.
         Solicitar suficientes datos para cubrir 52 períodos más el desplazamiento de 26 períodos.
         """
-        fecha_actual = datetime.now()  # Obtener la fecha y hora actual
-        fecha_inicio = fecha_actual - timedelta(days=30)  # Pedir datos de 30 días atrás
-        fecha_fin = fecha_actual.strftime('%Y-%m-%d')  # Usar la fecha actual como fecha final
+        fecha_actual_servidor = self.obtener_hora_servidor()  # Obtener la fecha actual desde el servidor
+        fecha_inicio_utc = fecha_actual_servidor - timedelta(days=30)  # Pedir datos de 30 días atrás en UTC
 
-        print(f"Solicitando datos desde {fecha_inicio.strftime('%Y-%m-%d')} hasta {fecha_fin} para {symbol_polygon}...")
+        # Usar las fechas en formato string para la API
+        start_date = fecha_inicio_utc.strftime('%Y-%m-%d')
+        end_date = fecha_actual_servidor.strftime('%Y-%m-%d')
+
+        print(f"Solicitando datos desde {start_date} hasta {end_date} para {symbol_polygon}...")
 
         # Obtener los datos históricos de Polygon.io
-        df = self.obtener_datos_polygon(symbol_polygon, timeframe, 
-                                        fecha_inicio.strftime('%Y-%m-%d'), 
-                                        fecha_fin)  # Usar fecha actual como fecha final
+        df = self.obtener_datos_polygon(symbol_polygon, timeframe, start_date, end_date)
 
         if df.empty:
             print(f"No se obtuvieron datos válidos para {symbol_polygon}.")
@@ -110,8 +130,8 @@ class ForexAnalyzer:
             print(f"No se pudieron calcular los valores de Ichimoku para {pair}")
             return "Neutral"
 
-        # Asegurarse de usar la penúltima vela, es decir, la última vela completa
-        ultimo_valor = df.iloc[-2]  # Última vela completa, no la actual que se está formando
+        # Usar la penúltima vela devuelta por la API (la última completa)
+        ultimo_valor = df.iloc[-2]  # Penúltima vela completa devuelta por la API
         fecha_ultimo_valor = df.index[-2]  # Obtener la fecha de la penúltima vela
 
         print(f"Valores de Ichimoku para {pair} (Fecha: {fecha_ultimo_valor}):")

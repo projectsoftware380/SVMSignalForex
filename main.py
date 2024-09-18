@@ -20,15 +20,6 @@ def normalizar_par(pair):
     """
     return pair.replace("-", "")
 
-def calcular_tiempo_restante(intervalo_segundos):
-    """
-    Calcula cuánto tiempo falta para que se complete la vela actual, en función del intervalo (en segundos).
-    """
-    ahora = datetime.now()
-    segundos_transcurridos = (ahora.minute * 60 + ahora.second) % intervalo_segundos
-    tiempo_restante = intervalo_segundos - segundos_transcurridos
-    return tiempo_restante
-
 def main():
     # Cargar configuración desde un archivo JSON
     with open("config.json") as config_file:
@@ -55,15 +46,9 @@ def main():
 
     # Definir funciones de operaciones
     def evaluar_tendencias():
-        primer_análisis = True  # Bandera para el primer análisis
         while True:
             try:
-                if not primer_análisis:
-                    # Calcular cuánto tiempo queda para que se forme la siguiente vela completa de 1 hora
-                    tiempo_restante = calcular_tiempo_restante(3600)  # 3600 segundos = 1 hora
-                    time.sleep(tiempo_restante)
-
-                # Analizar tendencias al cierre de la vela o inmediatamente para el primer análisis
+                # Analizar tendencias periódicamente (cada intervalo configurado)
                 for pair in config['pairs']:
                     pair_normalizado = normalizar_par(pair)
                     resultado = forex_analyzer.analizar_par(pair_normalizado)
@@ -77,45 +62,36 @@ def main():
                             pair_normalizado = normalizar_par(pair)
                             print(f"Tendencia fuerte para {pair_normalizado}: {tendencia}")
 
-                primer_análisis = False  # Desactivar la bandera después del primer análisis
+                # Esperar hasta el siguiente ciclo de evaluación de tendencias
+                time.sleep(config.get('tendencia_interval', 3600))  # 3600 segundos = 1 hora
             except Exception as e:
                 print(f"Error durante la evaluación de tendencias: {str(e)}")
                 time.sleep(60)  # Esperar un minuto antes de intentar de nuevo
 
     def evaluar_reversiones():
-        primer_análisis = True  # Bandera para el primer análisis
         while True:
             try:
-                if not primer_análisis:
-                    # Calcular cuánto tiempo queda para que se forme la siguiente vela completa de 15 minutos
-                    tiempo_restante = calcular_tiempo_restante(900)  # 900 segundos = 15 minutos
-                    time.sleep(tiempo_restante)
-
-                # Evaluar reversiones al cierre de la vela o inmediatamente para el primer análisis
+                # Evaluar reversiones periódicamente (cada 15 minutos por defecto)
                 pares_reversion = forex_reversal_analyzer.analizar_reversiones(forex_analyzer.last_trend)
                 if imprimir_reversiones:
                     for pair, reversion in pares_reversion.items():
                         pair_normalizado = normalizar_par(pair)
                         print(f"Reversión detectada para {pair_normalizado}: {reversion}")
 
-                primer_análisis = False  # Desactivar la bandera después del primer análisis
+                # Esperar hasta el siguiente ciclo de evaluación de reversiones
+                time.sleep(config.get('reversion_interval', 900))  # 900 segundos = 15 minutos
             except Exception as e:
                 print(f"Error durante la evaluación de reversiones: {str(e)}")
                 time.sleep(60)  # Esperar un minuto antes de intentar de nuevo
 
     def evaluar_senales():
-        primer_análisis = True  # Bandera para el primer análisis
         while True:
             try:
-                if not primer_análisis:
-                    # Calcular cuánto tiempo queda para que se forme la siguiente vela completa de 3 minutos
-                    tiempo_restante = calcular_tiempo_restante(180)  # 180 segundos = 3 minutos
-                    time.sleep(tiempo_restante)
-
-                # Evaluar señales al cierre de la vela o inmediatamente para el primer análisis
+                # Evaluar señales periódicamente (cada 3 minutos por defecto)
                 forex_signal_analyzer.analizar_senales(forex_reversal_analyzer.resultados, imprimir_senales)
 
-                primer_análisis = False  # Desactivar la bandera después del primer análisis
+                # Esperar hasta el siguiente ciclo de evaluación de señales
+                time.sleep(config.get('senales_interval', 180))  # 180 segundos = 3 minutos
             except Exception as e:
                 print(f"Error durante la evaluación de señales: {str(e)}")
                 time.sleep(60)  # Esperar un minuto antes de intentar de nuevo

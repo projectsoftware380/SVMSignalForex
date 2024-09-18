@@ -2,12 +2,32 @@ import requests
 import pandas as pd
 import pandas_ta as ta
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+import pytz
 
 class ForexReversalAnalyzer:
     def __init__(self, mt5_executor, api_key_polygon):
         self.mt5_executor = mt5_executor
         self.api_key_polygon = api_key_polygon
         self.resultados = {}
+
+    def obtener_hora_servidor(self):
+        """
+        Obtiene la hora actual del servidor de Polygon.io (en UTC o con zona horaria).
+        """
+        url = "https://api.polygon.io/v1/marketstatus/now?apiKey=" + self.api_key_polygon
+        response = requests.get(url)
+        if response.status_code == 200:
+            server_time = response.json().get("serverTime", None)
+            if server_time:
+                try:
+                    # Intentar primero con el formato UTC (con 'Z')
+                    return datetime.strptime(server_time, '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
+                except ValueError:
+                    # Si falla, intentar con formato que incluye zona horaria
+                    return datetime.fromisoformat(server_time).astimezone(pytz.UTC)
+        # Si hay algún problema con la solicitud o respuesta, utilizar UTC local como fallback
+        return datetime.utcnow().replace(tzinfo=pytz.UTC)
 
     def normalizar_par(self, pair):
         return pair.replace("-", "")
@@ -17,26 +37,27 @@ class ForexReversalAnalyzer:
         Solicita datos directamente a la API de Polygon.io para el símbolo dado.
         """
         try:
-            fecha_fin = pd.Timestamp.now()
-            fecha_inicio = fecha_fin - pd.Timedelta(hours=horas)
+            # Obtener la fecha del servidor
+            fecha_fin = self.obtener_hora_servidor()
+            fecha_inicio = fecha_fin - timedelta(hours=horas)
 
             start_date = fecha_inicio.strftime('%Y-%m-%d')
             end_date = fecha_fin.strftime('%Y-%m-%d')
 
-            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/1/{timeframe}/{start_date}/{end_date}?apiKey={self.api_key_polygon}&sort=asc"
+            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/{multiplier}/{timeframe}/{start_date}/{end_date}?apiKey={self.api_key_polygon}&sort=asc"
             response = requests.get(url)
             if response.status_code == 200:
                 data = response.json()
                 if 'results' in data:
                     df = pd.DataFrame(data['results'])
-                    df['timestamp'] = pd.to_datetime(df['t'], unit='ms')
+                    df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
                     df.set_index('timestamp', inplace=True)
 
-                    ultimo_timestamp = df.index[-1]
-                    if (pd.Timestamp.now() - ultimo_timestamp).total_seconds() > 300:
-                        print("Los datos no están actualizados.")
+                    if df.empty:
+                        print(f"Advertencia: No se obtuvieron suficientes datos para {symbol}.")
                         return pd.DataFrame()
 
+                    print(f"Datos obtenidos correctamente para {symbol}: {df.shape[0]} filas.")
                     return df[['o', 'h', 'l', 'c']]
                 else:
                     print("No se encontraron resultados en la respuesta.")
@@ -61,13 +82,15 @@ class ForexReversalAnalyzer:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         df = df.dropna()
 
+        # Cálculo de las bandas de Bollinger
         bollinger = ta.bbands(df['Close'], length=20, std=2)
         df['mid'] = bollinger['BBM_20_2.0']
         df['upper'] = bollinger['BBU_20_2.0']
         df['lower'] = bollinger['BBL_20_2.0']
 
-        precio_cierre = df['Close'].iloc[-1]
-        banda_central = df['mid'].iloc[-1]
+        # Tomar la penúltima vela (la última completa)
+        precio_cierre = df['Close'].iloc[-2]
+        banda_central = df['mid'].iloc[-2]
         print(f"Precio de cierre para {symbol}: {precio_cierre}, Banda central de Bollinger: {banda_central}")
 
         return df
@@ -77,8 +100,8 @@ class ForexReversalAnalyzer:
         Detecta una posible reversión basada en las Bandas de Bollinger y la tendencia actual.
         """
         try:
-            precio_actual = df['Close'].iloc[-1]
-            linea_central = df['mid'].iloc[-1]
+            precio_actual = df['Close'].iloc[-2]  # Usar la penúltima vela completa
+            linea_central = df['mid'].iloc[-2]
 
             if tendencia == "Tendencia Alcista" and precio_actual < linea_central:
                 return "Reversión Alcista"
