@@ -74,9 +74,12 @@ def main():
                 # Evaluar reversiones periódicamente (cada 15 minutos por defecto)
                 pares_reversion = forex_reversal_analyzer.analizar_reversiones(forex_analyzer.last_trend)
                 if imprimir_reversiones:
-                    for pair, reversion in pares_reversion.items():
-                        pair_normalizado = normalizar_par(pair)
-                        print(f"Reversión detectada para {pair_normalizado}: {reversion}")
+                    if pares_reversion:
+                        for pair, reversion in pares_reversion.items():
+                            pair_normalizado = normalizar_par(pair)
+                            print(f"Reversión detectada para {pair_normalizado}: {reversion}")
+                    else:
+                        print("No se detectaron reversiones.")
 
                 # Esperar hasta el siguiente ciclo de evaluación de reversiones
                 time.sleep(config.get('reversion_interval', 900))  # 900 segundos = 15 minutos
@@ -88,8 +91,11 @@ def main():
         while True:
             try:
                 # Evaluar señales periódicamente (cada 3 minutos por defecto)
-                forex_signal_analyzer.analizar_senales(forex_reversal_analyzer.resultados, imprimir_senales)
-
+                if forex_reversal_analyzer.resultados:
+                    forex_signal_analyzer.analizar_senales(forex_reversal_analyzer.resultados, imprimir_senales)
+                else:
+                    print("No hay reversiones para analizar señales.")
+                
                 # Esperar hasta el siguiente ciclo de evaluación de señales
                 time.sleep(config.get('senales_interval', 180))  # 180 segundos = 3 minutos
             except Exception as e:
