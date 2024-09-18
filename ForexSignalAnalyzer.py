@@ -98,7 +98,7 @@ class ForexSignalAnalyzer:
         Genera señales de trading basadas en el RSI y las reversiones detectadas.
         """
         try:
-            rsi = ta.rsi(df['Close'], length=14)  # Ajusta el período según necesites
+            rsi = ta.rsi(df['Close'], length=2)  # Ajusta el período según necesites
             if rsi is None or rsi.empty:
                 raise ValueError("No se pudo calcular el RSI.")
             
