@@ -1,70 +1,123 @@
 import requests
 import pandas as pd
 import pandas_ta as ta
-from DataFetcher import DataFetcher
-import MetaTrader5 as mt5
 from MetaTrader5Executor import MetaTrader5Executor
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 
 class ForexSignalAnalyzer:
-    def __init__(self, data_fetcher, mt5_executor, api_key_polygon):
-        self.data_fetcher = data_fetcher
+    def __init__(self, mt5_executor, api_key_polygon):
         self.mt5_executor = mt5_executor  # Instancia del ejecutor de MetaTrader 5
         self.api_key_polygon = api_key_polygon
 
     def verificar_estado_mercado(self):
         """
-        Verifica si el mercado Forex está abierto utilizando la API de Polygon.io proporcionada por DataFetcher.
+        Verifica si el mercado Forex está abierto.
+        Para simplificar, esta función puede devolver siempre True, o puedes implementar lógica adicional
+        para verificar el horario de mercado.
         """
-        return self.data_fetcher.obtener_estado_mercado()
+        return True  # O la lógica que decidas implementar
+
+    def obtener_datos_api(self, symbol, timeframe='minute', days=1):
+        """
+        Obtiene datos de la API de Polygon.io para el símbolo dado.
+        """
+        try:
+            # Calcular fechas de inicio y fin
+            fecha_final = datetime.now().strftime('%Y-%m-%d')
+            fecha_inicio = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+
+            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/1/{timeframe}/{fecha_inicio}/{fecha_final}"
+            params = {
+                'apiKey': self.api_key_polygon,
+                'limit': 50000,
+                'sort': 'asc'
+            }
+            response = requests.get(url, params=params)
+
+            if response.status_code == 200:
+                data = response.json().get('results', [])
+                if len(data) == 0:
+                    print(f"Advertencia: No se obtuvieron datos para {symbol}.")
+                    return pd.DataFrame()
+
+                # Crear DataFrame con los valores de "High", "Low", "Close" y "Open"
+                df = pd.DataFrame(data)
+                df['timestamp'] = pd.to_datetime(df['t'], unit='ms')
+                df.set_index('timestamp', inplace=True)
+                df.rename(columns={'h': 'High', 'l': 'Low', 'c': 'Close', 'o': 'Open'}, inplace=True)
+
+                return df[['High', 'Low', 'Close', 'Open']]  # Devolver solo columnas relevantes
+            else:
+                print(f"Error al obtener datos: {response.status_code}")
+                return pd.DataFrame()
+        except Exception as e:
+            print(f"Error al obtener datos de la API para {symbol}: {e}")
+            return pd.DataFrame()
 
     def obtener_datos_rsi(self, symbol):
         """
-        Obtiene datos para calcular el RSI, usando el DataFetcher para solicitar datos históricos.
+        Obtiene datos para calcular el RSI.
         """
-        return self.data_fetcher.obtener_datos(symbol=symbol, timeframe='minute', range='3', days=1)
+        df = self.obtener_datos_api(symbol, timeframe='minute', days=1)  # Obtener datos de 1 día
+        if df.empty:
+            raise ValueError(f"Los datos obtenidos para {symbol} no son suficientes o están vacíos.")
+        
+        # Convertir columnas a tipo numérico y eliminar NaN
+        for col in ['Open', 'High', 'Low', 'Close']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        df = df.dropna()
+
+        return df
 
     def generar_senal_trading(self, df, reverso_tendencia):
         """
         Genera señales de trading basadas en el RSI y las reversiones detectadas.
         """
-        rsi = ta.rsi(df['Close'], length=14)
-        if rsi.iloc[-1] > 70 and reverso_tendencia == "Reversión Bajista":
-            return "Señal de Venta"
-        elif rsi.iloc[-1] < 30 and reverso_tendencia == "Reversión Alcista":
-            return "Señal de Compra"
-        return "No hay señal"
+        try:
+            rsi = ta.rsi(df['Close'], length=14)  # Ajusta el período según necesites
+            if rsi is None or rsi.empty:
+                raise ValueError("No se pudo calcular el RSI.")
+            
+            ultimo_rsi = rsi.iloc[-1]
+            print(f"RSI para {df.index[-1]}: {ultimo_rsi}")
+
+            if ultimo_rsi > 80 and reverso_tendencia == "Reversión Bajista":
+                return "Señal de Venta"
+            elif ultimo_rsi < 20 and reverso_tendencia == "Reversión Alcista":
+                return "Señal de Compra"
+            return "No hay señal"
+        except Exception as e:
+            raise ValueError(f"Error al generar la señal de trading: {e}")
 
     def analizar_senales(self, pares_reversiones, imprimir_senales):
         """
         Analiza las señales de trading para los pares en los que se detectaron reversiones de tendencia.
-        Ajuste: El número de hilos se ajusta dinámicamente en función de la cantidad de pares a analizar.
         """
         if not self.verificar_estado_mercado():
-            return {}  # Detener si el mercado está cerrado
+            return {}
 
         resultados = {}
         num_pares = len(pares_reversiones)
-        max_workers = min(10, num_pares)  # Ajustar dinámicamente el número de hilos, con un máximo de 10
+        max_workers = min(10, num_pares)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for pair, reverso_tendencia in pares_reversiones.items():
-                symbol_polygon = pair.replace("-", "")
-                future = executor.submit(self.analizar_senal_para_par, symbol_polygon, reverso_tendencia, resultados, pair, imprimir_senales)
+                future = executor.submit(self.analizar_senal_para_par, pair, reverso_tendencia, resultados, imprimir_senales)
                 futures.append(future)
 
             for future in futures:
                 future.result()
 
-        self.imprimir_diccionario_senales(resultados)  # Imprimir el diccionario de señales detectadas
+        self.imprimir_diccionario_senales(resultados)
         return resultados
 
-    def analizar_senal_para_par(self, symbol_polygon, reverso_tendencia, resultados, pair, imprimir_senales):
+    def analizar_senal_para_par(self, pair, reverso_tendencia, resultados, imprimir_senales):
         """
         Función que maneja el análisis de señales para cada par en paralelo.
         """
         try:
-            df = self.obtener_datos_rsi(symbol_polygon)
+            df = self.obtener_datos_rsi(pair)
             resultado_senal = self.generar_senal_trading(df, reverso_tendencia)
             if resultado_senal and ("Compra" in resultado_senal or "Venta" in resultado_senal):
                 resultados[pair] = resultado_senal
@@ -72,7 +125,7 @@ class ForexSignalAnalyzer:
                     print(f"Señal detectada para {pair}: {resultado_senal}")
                 # Ejecutar una orden en MetaTrader 5 según la señal detectada
                 order_type = "buy" if "Compra" in resultado_senal else "sell"
-                self.mt5_executor.ejecutar_orden(symbol_polygon, order_type)
+                self.mt5_executor.ejecutar_orden(pair.replace("-", ""), order_type)
         except ValueError as e:
             print(f"Error en el análisis de señales para {pair}: {str(e)}")
         except TypeError as e:
@@ -88,20 +141,3 @@ class ForexSignalAnalyzer:
             print("\nDiccionario de señales detectadas:")
             for pair, senal in resultados.items():
                 print(f"{pair}: {senal}")
-
-# Uso del programa
-if __name__ == "__main__":
-    data_fetcher = DataFetcher("0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
-    mt5_executor = MetaTrader5Executor(None)  # Asegúrate de tener esta clase disponible
-    signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR")
-
-    # Simulación de datos de reversiones
-    pares_reversiones_simuladas = {
-        "GBPUSD": "Reversión Alcista",
-        "USDJPY": "Reversión Bajista",
-        "EURUSD": "Reversión Alcista"
-    }
-
-    resultado_senales = signal_analyzer.analizar_senales(pares_reversiones_simuladas, True)
-    print(f"Señales detectadas: {resultado_senales}")
-

@@ -1,16 +1,16 @@
 import time
 import threading
 import json
+from datetime import datetime
 from ForexAnalyzer import ForexAnalyzer
 from ForexReversalAnalyzer import ForexReversalAnalyzer
 from ForexSignalAnalyzer import ForexSignalAnalyzer
 from MetaTrader5Executor import MetaTrader5Executor
 from TradeCloseConditions import TradeCloseConditions
-from DataFetcher import DataFetcher
 
 # Banderas para controlar las impresiones
 imprimir_tendencias = True
-imprimir_reversiones = False
+imprimir_reversiones = True
 imprimir_senales = True
 imprimir_cierres = False  # No imprimir en monitorear_cierres
 
@@ -20,13 +20,19 @@ def normalizar_par(pair):
     """
     return pair.replace("-", "")
 
+def calcular_tiempo_restante(intervalo_segundos):
+    """
+    Calcula cuánto tiempo falta para que se complete la vela actual, en función del intervalo (en segundos).
+    """
+    ahora = datetime.now()
+    segundos_transcurridos = (ahora.minute * 60 + ahora.second) % intervalo_segundos
+    tiempo_restante = intervalo_segundos - segundos_transcurridos
+    return tiempo_restante
+
 def main():
     # Cargar configuración desde un archivo JSON
     with open("config.json") as config_file:
         config = json.load(config_file)
-
-    # Crear una instancia de DataFetcher con la clave correcta
-    data_fetcher = DataFetcher(config['api_key_polygon'])
 
     # Instanciar MetaTrader5Executor
     mt5_executor = MetaTrader5Executor(None)
@@ -35,10 +41,12 @@ def main():
     close_conditions = TradeCloseConditions(mt5_executor)
     mt5_executor.close_conditions = close_conditions
 
-    # Instanciar las demás clases con los argumentos necesarios
-    forex_analyzer = ForexAnalyzer(data_fetcher, config['api_key_polygon'], config['pairs'])
-    forex_reversal_analyzer = ForexReversalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
-    forex_signal_analyzer = ForexSignalAnalyzer(data_fetcher, mt5_executor, config['api_key_polygon'])
+    # Instanciar ForexAnalyzer con la clave API y pares de divisas
+    forex_analyzer = ForexAnalyzer(config['api_key_polygon'], config['pairs'])
+    # Instanciar ForexReversalAnalyzer con mt5_executor
+    forex_reversal_analyzer = ForexReversalAnalyzer(mt5_executor, config['api_key_polygon'])
+    # Instanciar ForexSignalAnalyzer sin DataFetcher
+    forex_signal_analyzer = ForexSignalAnalyzer(mt5_executor, config['api_key_polygon'])
 
     # Conectar MetaTrader 5
     if not mt5_executor.conectar_mt5():
@@ -47,57 +55,74 @@ def main():
 
     # Definir funciones de operaciones
     def evaluar_tendencias():
+        primer_análisis = True  # Bandera para el primer análisis
         while True:
             try:
-                # Verificar si el mercado está abierto
-                if not data_fetcher.obtener_estado_mercado():
-                    time.sleep(config.get('loop_interval', 60))
-                    continue
+                if not primer_análisis:
+                    # Calcular cuánto tiempo queda para que se forme la siguiente vela completa de 1 hora
+                    tiempo_restante = calcular_tiempo_restante(3600)  # 3600 segundos = 1 hora
+                    time.sleep(tiempo_restante)
 
-                # Analizar tendencias
-                pares_tendencia = {}
+                # Analizar tendencias al cierre de la vela o inmediatamente para el primer análisis
                 for pair in config['pairs']:
-                    tendencia = forex_analyzer.analizar_par(pair)
-
-                    # Normalizar todos los pares eliminando los guiones
                     pair_normalizado = normalizar_par(pair)
+                    resultado = forex_analyzer.analizar_par(pair_normalizado)
 
-                    pares_tendencia[pair_normalizado] = tendencia
-
-                # Imprimir solo las tendencias alcistas o bajistas
+                # Imprimir solo las tendencias alcistas o bajistas desde last_trend
                 if imprimir_tendencias:
-                    for pair, tendencia in pares_tendencia.items():
-                        if tendencia in ["Tendencia Alcista", "Tendencia Bajista"]:
-                            print(f"Tendencia para {pair}: {tendencia}")
+                    if not forex_analyzer.last_trend:
+                        print("No se detectaron tendencias alcistas o bajistas.")
+                    else:
+                        for pair, tendencia in forex_analyzer.last_trend.items():
+                            pair_normalizado = normalizar_par(pair)
+                            print(f"Tendencia fuerte para {pair_normalizado}: {tendencia}")
 
-                # Evaluar reversiones con las tendencias
-                evaluar_reversiones(pares_tendencia)
+                primer_análisis = False  # Desactivar la bandera después del primer análisis
             except Exception as e:
-                if imprimir_tendencias:
-                    print(f"Error durante la evaluación de tendencias: {str(e)}")
-            time.sleep(config.get('tendencia_interval', 300))
+                print(f"Error durante la evaluación de tendencias: {str(e)}")
+                time.sleep(60)  # Esperar un minuto antes de intentar de nuevo
 
-    def evaluar_reversiones(pares_tendencia):
-        try:
-            # Analizar reversiones
-            pares_reversion = forex_reversal_analyzer.analizar_reversiones(pares_tendencia)
-            if imprimir_reversiones:
-                for pair, reversion in pares_reversion.items():
-                    print(f"Reversión detectada para {pair}: {reversion}")
-            # Analizar señales para las reversiones detectadas
-            forex_signal_analyzer.analizar_senales(pares_reversion, imprimir_senales)
-        except Exception as e:
-            if imprimir_reversiones:
+    def evaluar_reversiones():
+        primer_análisis = True  # Bandera para el primer análisis
+        while True:
+            try:
+                if not primer_análisis:
+                    # Calcular cuánto tiempo queda para que se forme la siguiente vela completa de 15 minutos
+                    tiempo_restante = calcular_tiempo_restante(900)  # 900 segundos = 15 minutos
+                    time.sleep(tiempo_restante)
+
+                # Evaluar reversiones al cierre de la vela o inmediatamente para el primer análisis
+                pares_reversion = forex_reversal_analyzer.analizar_reversiones(forex_analyzer.last_trend)
+                if imprimir_reversiones:
+                    for pair, reversion in pares_reversion.items():
+                        pair_normalizado = normalizar_par(pair)
+                        print(f"Reversión detectada para {pair_normalizado}: {reversion}")
+
+                primer_análisis = False  # Desactivar la bandera después del primer análisis
+            except Exception as e:
                 print(f"Error durante la evaluación de reversiones: {str(e)}")
+                time.sleep(60)  # Esperar un minuto antes de intentar de nuevo
+
+    def evaluar_senales():
+        primer_análisis = True  # Bandera para el primer análisis
+        while True:
+            try:
+                if not primer_análisis:
+                    # Calcular cuánto tiempo queda para que se forme la siguiente vela completa de 3 minutos
+                    tiempo_restante = calcular_tiempo_restante(180)  # 180 segundos = 3 minutos
+                    time.sleep(tiempo_restante)
+
+                # Evaluar señales al cierre de la vela o inmediatamente para el primer análisis
+                forex_signal_analyzer.analizar_senales(forex_reversal_analyzer.resultados, imprimir_senales)
+
+                primer_análisis = False  # Desactivar la bandera después del primer análisis
+            except Exception as e:
+                print(f"Error durante la evaluación de señales: {str(e)}")
+                time.sleep(60)  # Esperar un minuto antes de intentar de nuevo
 
     def monitorear_cierres():
         while True:
             try:
-                # Verificar si el mercado está abierto
-                if not data_fetcher.obtener_estado_mercado():
-                    time.sleep(config.get('loop_interval', 60))
-                    continue
-
                 # Monitorear las posiciones abiertas para verificar si deben cerrarse
                 for posicion in mt5_executor.obtener_posiciones_abiertas():
                     symbol = posicion['symbol']
@@ -112,23 +137,6 @@ def main():
                     print(f"Error durante el monitoreo de cierres: {str(e)}")
             time.sleep(config.get('cierre_interval', 180))
 
-    def monitorear_stop_loss():
-        """
-        Monitorea las operaciones abiertas y cierra las que alcancen el stop loss dinámico.
-        """
-        while True:
-            try:
-                # Verificar si el mercado está abierto
-                if not data_fetcher.obtener_estado_mercado():
-                    time.sleep(config.get('loop_interval', 60))
-                    continue
-
-                # Monitorear stop loss en las posiciones abiertas
-                mt5_executor.monitorear_stop_loss()
-            except Exception as e:
-                print(f"Error durante el monitoreo de stop loss: {str(e)}")
-            time.sleep(config.get('stop_loss_interval', 60))  # Intervalo de monitoreo de stop loss
-
     def monitorear_balance():
         """
         Monitorea el balance global de la cuenta para detectar niveles de pérdidas o ganancias.
@@ -141,18 +149,21 @@ def main():
 
     # Iniciar hilos paralelos
     hilo_tendencias = threading.Thread(target=evaluar_tendencias)
+    hilo_reversiones = threading.Thread(target=evaluar_reversiones)
+    hilo_senales = threading.Thread(target=evaluar_senales)
     hilo_cierres = threading.Thread(target=monitorear_cierres)
-    hilo_stop_loss = threading.Thread(target=monitorear_stop_loss)
     hilo_balance = threading.Thread(target=monitorear_balance)  # Nuevo hilo para monitoreo de balance
 
     hilo_tendencias.start()
+    hilo_reversiones.start()
+    hilo_senales.start()
     hilo_cierres.start()
-    hilo_stop_loss.start()
     hilo_balance.start()
 
     hilo_tendencias.join()
+    hilo_reversiones.join()
+    hilo_senales.join()
     hilo_cierres.join()
-    hilo_stop_loss.join()
     hilo_balance.join()
 
 if __name__ == "__main__":
@@ -163,5 +174,3 @@ if __name__ == "__main__":
     finally:
         if 'mt5_executor' in locals():
             mt5_executor.cerrar_conexion()
-
-
