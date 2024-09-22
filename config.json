@@ -12,9 +12,10 @@
         "EUR-AUD", "EUR-CAD", "EUR-NZD", "GBP-AUD", "GBP-CAD", "GBP-NZD" 
     ],
     "usar_sentimiento_mercado": false,
-    "max_loss_level": -1000,  
-    "profit_trailing_level": 2000,  
-    "trailing_stop_percentage": 10  
+    "max_loss_level": -50,  
+    "profit_trailing_level": 20,  
+    "trailing_stop_percentage": 50,
+    "monitoreo_intervalo": 1 
 }
 
 
