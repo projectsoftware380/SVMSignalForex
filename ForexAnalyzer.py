@@ -134,13 +134,21 @@ class ForexAnalyzer:
         ultimo_valor = df.iloc[-2]  # Penúltima vela completa devuelta por la API
         fecha_ultimo_valor = df.index[-2]  # Obtener la fecha de la penúltima vela
 
+        # Obtener el precio de cierre de hace 26 periodos para la comparación con el Chikou Span
+        if len(df) >= 26:
+            precio_hace_26_periodos = df['Close'].iloc[-26]
+        else:
+            print(f"No se pudo obtener el precio de hace 26 periodos para {pair}")
+            return "Neutral"
+
         print(f"Valores de Ichimoku para {pair} (Fecha: {fecha_ultimo_valor}):")
-        print(ultimo_valor[['Close', 'Senkou Span A', 'Senkou Span B', 'Chikou Span']])
+        print(ultimo_valor[['Close', 'Tenkan-sen', 'Kijun-sen', 'Senkou Span A', 'Senkou Span B', 'Chikou Span']])
 
         # Lógica para tendencia alcista
         if (ultimo_valor['Senkou Span A'] > ultimo_valor['Senkou Span B'] and
             ultimo_valor['Close'] > ultimo_valor['Senkou Span A'] and
-            ultimo_valor['Chikou Span'] > ultimo_valor['Close']):
+            ultimo_valor['Tenkan-sen'] > ultimo_valor['Kijun-sen'] and
+            ultimo_valor['Chikou Span'] > precio_hace_26_periodos):
             # Almacenar tendencia alcista en el diccionario
             print(f"Tendencia Alcista detectada para {pair}")
             self.last_trend[pair] = "Tendencia Alcista"
@@ -149,12 +157,18 @@ class ForexAnalyzer:
         # Lógica para tendencia bajista
         elif (ultimo_valor['Senkou Span B'] > ultimo_valor['Senkou Span A'] and
               ultimo_valor['Close'] < ultimo_valor['Senkou Span B'] and
-              ultimo_valor['Chikou Span'] < ultimo_valor['Close']):
+              ultimo_valor['Tenkan-sen'] < ultimo_valor['Kijun-sen'] and
+              ultimo_valor['Chikou Span'] < precio_hace_26_periodos):
             # Almacenar tendencia bajista en el diccionario
             print(f"Tendencia Bajista detectada para {pair}")
             self.last_trend[pair] = "Tendencia Bajista"
             return "Tendencia Bajista"
 
         # Lógica para mercado neutral o indecisión
+        elif (ultimo_valor['Close'] >= ultimo_valor['Senkou Span B'] and
+              ultimo_valor['Close'] <= ultimo_valor['Senkou Span A']):
+            print(f"Mercado neutral detectado para {pair}")
+            return "Neutral"
+
         print(f"Mercado neutral detectado para {pair}")
         return "Neutral"
