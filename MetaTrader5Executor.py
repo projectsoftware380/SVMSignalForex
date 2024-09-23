@@ -1,6 +1,7 @@
 import MetaTrader5 as mt5
 import time
-import json
+import threading
+import sys
 
 class MetaTrader5Executor:
     def __init__(self, max_loss_level, profit_trailing_level, trailing_stop_percentage):
@@ -10,7 +11,8 @@ class MetaTrader5Executor:
         self.profit_trailing_level = profit_trailing_level
         self.trailing_stop_percentage = trailing_stop_percentage
         self.conectado = False
-        self.operaciones_abiertas = {}  # Inicializar operaciones_abiertas como un diccionario vacío
+        self.operaciones_abiertas = {}
+        self.lock = threading.Lock()
 
         # Conectar a MetaTrader 5
         if not self.conectar_mt5():
@@ -21,109 +23,183 @@ class MetaTrader5Executor:
         if account_info is None:
             raise ValueError("No se pudo obtener la información de la cuenta.")
         self.equity_inicial = account_info.equity
+        print(f"Equidad inicial obtenida: {self.equity_inicial}")
+
+        # Inicializar las operaciones abiertas
+        self.actualizar_operaciones_abiertas()
+
+    def normalizar_par(self, pair):
+        return pair.replace("-", "").replace(".", "").upper()
 
     def conectar_mt5(self):
-        """Conecta MetaTrader 5."""
+        """Conecta a MetaTrader 5."""
+        print("Intentando conectar a MetaTrader 5...")
         if not mt5.initialize():
+            print(f"Error al conectar a MetaTrader 5: {mt5.last_error()}")
             return False
         self.conectado = True
+        print("Conexión a MetaTrader 5 exitosa.")
         return True
 
-    def obtener_profit_abierto(self):
-        """Obtiene el profit total de las posiciones abiertas."""
-        posiciones = mt5.positions_get()
-        if posiciones is None or len(posiciones) == 0:
-            return 0.0
-
-        total_profit = sum(pos.profit for pos in posiciones)
-        return total_profit
-
-    def monitorear_equidad_global(self, monitoreo_intervalo=60):
-        """Monitorea las pérdidas y ganancias globales de la cuenta basadas en la equidad y el profit cada cierto intervalo de tiempo."""
-        while True:
-            # Obtener información de la cuenta
-            account_info = mt5.account_info()
-            if account_info is None:
+    def actualizar_operaciones_abiertas(self):
+        """Actualiza el diccionario con las operaciones abiertas actuales."""
+        with self.lock:
+            self.operaciones_abiertas.clear()
+            posiciones = mt5.positions_get()
+            if posiciones is None or len(posiciones) == 0:
+                print("No hay posiciones abiertas.")
                 return
 
-            equity_actual = account_info.equity
-            profit_abierto = self.obtener_profit_abierto()  # Obtener profit actual
-            ganancia_neta = equity_actual - self.equity_inicial + profit_abierto
-
-            # Verificar nivel de pérdida máxima
-            if ganancia_neta <= self.max_loss_level:
-                self.cerrar_todas_las_operaciones()
-                mt5.shutdown()
-                break
-
-            # Verificar trailing stop de ganancias
-            if ganancia_neta >= self.profit_trailing_level:
-                self.max_profit = max(self.max_profit, ganancia_neta)
-                trailing_stop_value = self.max_profit * (1 - self.trailing_stop_percentage / 100)
-
-                if ganancia_neta <= trailing_stop_value:
-                    self.cerrar_todas_las_operaciones()
-                    mt5.shutdown()
-                    break
-
-            # Esperar el intervalo de monitoreo antes de volver a revisar
-            time.sleep(monitoreo_intervalo)
-
-    def cerrar_todas_las_operaciones(self):
-        """Cierra todas las operaciones abiertas."""
-        posiciones = self.obtener_posiciones_abiertas()
-        for posicion in posiciones:
-            self.cerrar_posicion(posicion['symbol'], posicion['ticket'])
+            for pos in posiciones:
+                tipo_operacion = 'compra' if pos.type == 0 else 'venta'
+                # Normalizar el símbolo
+                symbol_normalizado = self.normalizar_par(pos.symbol)
+                self.operaciones_abiertas[symbol_normalizado] = {
+                    'symbol': symbol_normalizado,
+                    'ticket': pos.ticket,
+                    'type': tipo_operacion,
+                    'volume': pos.volume
+                }
+            print(f"Operaciones abiertas actualizadas: {self.operaciones_abiertas}")
 
     def obtener_posiciones_abiertas(self):
         """Devuelve una lista de posiciones abiertas en formato de diccionario."""
+        self.actualizar_operaciones_abiertas()  # Asegura que las posiciones están actualizadas
+        posiciones = list(self.operaciones_abiertas.values())
+        print(f"Posiciones abiertas: {posiciones}")
+        return posiciones
+
+    def ejecutar_orden(self, symbol, order_type):
+        """Ejecuta una orden de compra o venta en MetaTrader 5."""
+        with self.lock:
+            print(f"Ejecutando orden {order_type} para {symbol}")
+
+            # Verificar si ya hay una operación abierta con el mismo símbolo y tipo
+            symbol_normalizado = self.normalizar_par(symbol)
+            posiciones_abiertas = self.obtener_posiciones_abiertas()
+            for posicion in posiciones_abiertas:
+                if posicion['symbol'] == symbol_normalizado and posicion['type'] == ('compra' if order_type == 'buy' else 'venta'):
+                    print(f"Ya existe una operación {order_type} abierta para {symbol}. No se abrirá una nueva.")
+                    return
+
+            # Asegurarse de que el símbolo esté disponible
+            symbol_info = mt5.symbol_info(symbol)
+            if symbol_info is None:
+                print(f"{symbol} no encontrado, intentando agregarlo.")
+                if not mt5.symbol_select(symbol, True):
+                    print(f"No se pudo agregar {symbol}.")
+                    return
+
+            # Obtener el precio actual
+            price = mt5.symbol_info_tick(symbol).ask if order_type == 'buy' else mt5.symbol_info_tick(symbol).bid
+            trade_type = mt5.ORDER_TYPE_BUY if order_type == 'buy' else mt5.ORDER_TYPE_SELL
+
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": symbol,
+                "volume": 1.0,
+                "type": trade_type,
+                "price": price,
+                "deviation": 20,
+                "magic": 234000,
+                "comment": "Orden automática"
+            }
+
+            result = mt5.order_send(request)
+            if result.retcode == mt5.TRADE_RETCODE_DONE:
+                print(f"Orden ejecutada con éxito para {symbol}")
+                # Actualizar las operaciones abiertas
+                self.actualizar_operaciones_abiertas()
+            else:
+                print(f"Error al ejecutar la orden para {symbol}. Código de error: {result.retcode}")
+
+            time.sleep(1)
+
+    def cerrar_operacion(self, ticket):
+        """Cierra la operación con el ticket dado."""
+        with self.lock:
+            posicion = next((op for op in self.operaciones_abiertas.values() if op['ticket'] == ticket), None)
+            if posicion is None:
+                print(f"No se encontró la operación con el ticket {ticket}.")
+                return
+
+            symbol = posicion['symbol']
+            close_type = mt5.ORDER_TYPE_SELL if posicion['type'] == 'compra' else mt5.ORDER_TYPE_BUY
+
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": symbol,
+                "volume": posicion['volume'],
+                "type": close_type,
+                "position": ticket,
+                "price": mt5.symbol_info_tick(symbol).bid if posicion['type'] == 'compra' else mt5.symbol_info_tick(symbol).ask,
+                "deviation": 20,
+                "magic": 234000,
+                "comment": "Cierre automático"
+            }
+
+            result = mt5.order_send(request)
+            if result.retcode == mt5.TRADE_RETCODE_DONE:
+                print(f"Operación {ticket} cerrada correctamente.")
+                del self.operaciones_abiertas[symbol]  # Eliminar la operación cerrada del diccionario
+            else:
+                print(f"Error al cerrar la operación {ticket}. Código de error: {result.retcode}")
+
+    def monitorear_equidad_global(self, monitoreo_interval=60):
+        """
+        Monitorea la equidad global y toma acción cuando se alcanzan los niveles de pérdida o ganancia establecidos.
+        Detiene el programa una vez se cumplen las condiciones de cierre.
+        """
+        while True:
+            account_info = mt5.account_info()
+            if account_info is None:
+                print("No se pudo obtener la información de la cuenta.")
+                return
+
+            equity_actual = account_info.equity
+            print(f"Equidad actual: {equity_actual}")
+
+            # Verificar si se ha alcanzado el nivel de pérdida máxima
+            if equity_actual <= self.max_loss_level:
+                print(f"Equidad por debajo del nivel de pérdida máxima ({self.max_loss_level}). Cerrando todas las operaciones...")
+                self.cerrar_todas_las_operaciones()
+                break
+
+            # Verificar si se ha alcanzado el nivel de trailing stop de ganancias
+            if equity_actual >= self.profit_trailing_level:
+                self.max_profit = max(self.max_profit, equity_actual)
+                trailing_stop = self.max_profit * (1 - self.trailing_stop_percentage / 100)
+                if equity_actual <= trailing_stop:
+                    print(f"Activado el trailing stop de ganancias. Cerrando todas las operaciones...")
+                    self.cerrar_todas_las_operaciones()
+                    break
+
+            time.sleep(monitoreo_interval)
+
+        print("Deteniendo el programa debido a pérdida o ganancia alcanzada.")
+        self.detener_programa()
+
+    def cerrar_todas_las_operaciones(self):
+        """Cierra todas las posiciones abiertas."""
         posiciones = mt5.positions_get()
-        if posiciones is None:
-            return []
+        if posiciones is None or len(posiciones) == 0:
+            print("No hay posiciones abiertas.")
+            return
 
-        return [{'symbol': pos.symbol, 'ticket': pos.ticket, 'type': pos.type, 'price_open': pos.price_open} for pos in posiciones]
+        for posicion in posiciones:
+            symbol = posicion.symbol
+            ticket = posicion.ticket
+            print(f"Cerrando posición para {symbol}, ticket {ticket}")
+            self.cerrar_operacion(ticket)
 
-    def cerrar_posicion(self, symbol, ticket):
-        """Cierra una posición abierta en MetaTrader 5."""
-        posicion = mt5.positions_get(ticket=ticket)
-        if not posicion:
-            return False
+    def detener_programa(self):
+        """Detiene el programa completamente."""
+        print("Cerrando conexión a MetaTrader 5 y deteniendo el programa.")
+        self.cerrar_conexion()
+        sys.exit()
 
-        precio = mt5.symbol_info_tick(symbol).bid if posicion[0].type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(symbol).ask
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "position": ticket,
-            "symbol": symbol,
-            "volume": posicion[0].volume,
-            "type": mt5.ORDER_TYPE_SELL if posicion[0].type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY,
-            "price": precio,
-            "deviation": 20,
-            "magic": 234000,
-            "comment": "Cierre automático"
-        }
-        result = mt5.order_send(request)
-        if result.retcode == mt5.TRADE_RETCODE_DONE:
-            # Eliminar del diccionario solo si está presente
-            if symbol in self.operaciones_abiertas:
-                del self.operaciones_abiertas[symbol]
-
-
-# Leer el archivo config.json para obtener los parámetros de prueba
-with open("config.json", "r") as file:
-    config = json.load(file)
-
-# Parámetros de prueba desde el archivo config.json
-max_loss_level = config["max_loss_level"]
-profit_trailing_level = config["profit_trailing_level"]
-trailing_stop_percentage = config["trailing_stop_percentage"]
-monitoreo_intervalo = config["monitoreo_intervalo"]
-
-# Inicializar el ejecutor de MetaTrader 5 con los valores del archivo config.json
-executor = MetaTrader5Executor(
-    max_loss_level=max_loss_level,
-    profit_trailing_level=profit_trailing_level,
-    trailing_stop_percentage=trailing_stop_percentage
-)
-
-# Monitorear la equidad global con el intervalo de monitoreo ajustado
-executor.monitorear_equidad_global(monitoreo_intervalo)
+    def cerrar_conexion(self):
+        """Cierra la conexión con MetaTrader 5."""
+        mt5.shutdown()
+        self.conectado = False
+        print("Conexión con MetaTrader 5 cerrada.")
