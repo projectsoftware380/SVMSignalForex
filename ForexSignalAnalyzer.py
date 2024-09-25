@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import pytz
 import threading
-import MetaTrader5 as mt5  # Asegurarse de que se importe MetaTrader5
+import MetaTrader5 as mt5
 
 class ForexSignalAnalyzer:
     def __init__(self, mt5_executor, api_key_polygon):
@@ -164,10 +164,25 @@ class ForexSignalAnalyzer:
 
     def verificar_estado_mercado(self):
         """
-        Verifica si el mercado está abierto.
+        Verifica si el mercado de Forex (fx) está abierto consultando la API de Polygon.io.
         """
+        url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
         try:
-            return mt5.market_info("EURUSD").session_deals > 0  # Ejemplo para verificar si el mercado está abierto
+            response = requests.get(url)
+            if response.status_code == 200:
+                # Obtener la parte de "currencies" y verificar el estado de "fx"
+                currencies = response.json().get("currencies", {})
+                fx_status = currencies.get("fx", None)
+                
+                if fx_status == "open":
+                    print("El mercado de Forex está abierto.")
+                    return True
+                else:
+                    print(f"El mercado de Forex está cerrado. Estado actual: {fx_status}")
+                    return False
+            else:
+                print(f"Error al consultar el estado del mercado en Polygon: {response.status_code}")
+                return False
         except Exception as e:
             print(f"Error al verificar el estado del mercado: {e}")
             return False
