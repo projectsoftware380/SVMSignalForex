@@ -2,7 +2,7 @@
     "api_key_polygon": "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR",
     "api_token_forexnews": "25wpwpebrawmafmvjuagciubjoylthzaybzvbtqk",
     "loop_interval": 60,
-    "tendencia_interval": 3600,   
+    "tendencia_interval": 14400,   
     "reversion_interval": 900,     
     "senales_interval": 180,       
     "cierre_interval": 180,

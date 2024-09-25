@@ -3,12 +3,13 @@ class TradeCloseConditions:
         self.mt5_executor = mt5_executor
 
     def normalizar_par(self, pair):
+        """Normaliza el nombre del par de divisas."""
         return pair.replace("-", "").replace(".", "").upper()
 
     def verificar_cierre_por_condiciones(self, symbol, tendencia_actual):
         """
         Verifica si alguna de las condiciones de cierre se cumple:
-        - Tendencia contraria o neutral
+        - Tendencia contraria o neutral.
         """
         print(f"Verificando condiciones de cierre para {symbol}. Tendencia actual: {tendencia_actual if tendencia_actual else 'No determinada'}.")
 
@@ -24,8 +25,19 @@ class TradeCloseConditions:
             # Verificamos si la tendencia actual es contraria a la operación abierta
             if self.verificar_tendencia_contraria(tendencia_actual, operacion_abierta['type']):
                 print(f"Las condiciones de cierre por tendencia contraria se cumplen para {symbol}. Cerrando operación...")
-                self.mt5_executor.cerrar_operacion(operacion_abierta['ticket'])  # Cierra la operación
-                return True
+
+                # Intentar cerrar la operación
+                try:
+                    resultado_cierre = self.mt5_executor.cerrar_operacion(operacion_abierta['ticket'])
+                    if resultado_cierre:
+                        print(f"Operación {operacion_abierta['ticket']} cerrada correctamente.")
+                        return True
+                    else:
+                        print(f"Error al intentar cerrar la operación {operacion_abierta['ticket']}.")
+                        return False
+                except Exception as e:
+                    print(f"Error inesperado al cerrar la operación {operacion_abierta['ticket']}: {str(e)}")
+                    return False
             else:
                 print(f"No se cumplen condiciones de cierre por tendencia contraria para {symbol}.")
         else:

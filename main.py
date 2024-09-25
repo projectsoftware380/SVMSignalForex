@@ -15,6 +15,7 @@ imprimir_cierres = False  # No imprimir en monitorear_cierres
 
 # Variable de control global para detener todos los hilos
 detener_hilos = False
+hilos_lock = threading.Lock()  # Lock para proteger el acceso a detener_hilos
 
 def normalizar_par(pair):
     return pair.replace("-", "")
@@ -53,7 +54,10 @@ def main():
     # Definir funciones de operaciones
     def evaluar_tendencias():
         print("Iniciando evaluación de tendencias...")
-        while not detener_hilos:
+        while True:
+            with hilos_lock:
+                if detener_hilos:
+                    break
             try:
                 for pair in config['pairs']:
                     pair_normalizado = normalizar_par(pair)
@@ -69,14 +73,18 @@ def main():
                         for pair, tendencia in last_trend_copy.items():
                             print(f"{pair}: {tendencia}")
 
-                time.sleep(config.get('tendencia_interval', 60))  # Intervalo ajustable
+                # Ajustar el tiempo de espera a 4 horas (14400 segundos)
+                time.sleep(config.get('tendencia_interval', 14400))  # Intervalo ajustable a 4 horas
             except Exception as e:
                 print(f"Error durante la evaluación de tendencias: {str(e)}")
                 time.sleep(60)
 
     def evaluar_reversiones():
         print("Iniciando evaluación de reversiones...")
-        while not detener_hilos:
+        while True:
+            with hilos_lock:
+                if detener_hilos:
+                    break
             try:
                 with forex_analyzer.lock:
                     tendencias = forex_analyzer.last_trend.copy()
@@ -90,7 +98,10 @@ def main():
 
     def evaluar_senales():
         print("Iniciando evaluación de señales...")
-        while not detener_hilos:
+        while True:
+            with hilos_lock:
+                if detener_hilos:
+                    break
             try:
                 with forex_reversal_analyzer.lock:
                     resultados_reversiones = forex_reversal_analyzer.resultados.copy()
@@ -105,7 +116,10 @@ def main():
 
     def monitorear_cierres():
         print("Iniciando monitoreo de cierres...")
-        while not detener_hilos:
+        while True:
+            with hilos_lock:
+                if detener_hilos:
+                    break
             try:
                 posiciones = mt5_executor.obtener_posiciones_abiertas()
                 print(f"Posiciones abiertas: {posiciones}")  # Verificación de posiciones abiertas
@@ -124,7 +138,11 @@ def main():
                         if imprimir_cierres:
                             print(f"Cerrando posición para {symbol_normalizado}")
                         resultado = mt5_executor.cerrar_operacion(posicion['ticket'])
-                        if resultado.retcode != mt5.TRADE_RETCODE_DONE:
+                        
+                        # Verificar si el cierre de la operación fue exitoso
+                        if resultado is None:
+                            print(f"Error al intentar cerrar la operación {posicion['ticket']}. No se recibió respuesta.")
+                        elif resultado.retcode != mt5.TRADE_RETCODE_DONE:
                             print(f"Error al cerrar la operación {posicion['ticket']}. Código de error: {resultado.retcode}")
                         else:
                             print(f"Operación {posicion['ticket']} cerrada correctamente.")
@@ -138,8 +156,9 @@ def main():
 
         # Al finalizar el monitoreo de la equidad global (cuando se alcanza el límite de pérdida o ganancia),
         # detener todos los hilos
-        global detener_hilos
-        detener_hilos = True
+        with hilos_lock:
+            global detener_hilos
+            detener_hilos = True
 
     # Iniciar hilos paralelos
     hilos = [
@@ -155,11 +174,18 @@ def main():
 
     # Mantener el programa en ejecución
     try:
-        while not detener_hilos:
+        while True:
+            with hilos_lock:
+                if detener_hilos:
+                    break
             time.sleep(5)  # Mantiene el programa corriendo y chequea los hilos cada 5 segundos
     except KeyboardInterrupt:
         print("Proceso interrumpido manualmente.")
     finally:
+        with hilos_lock:
+            detener_hilos = True
+        for hilo in hilos:
+            hilo.join()  # Asegurar que todos los hilos se terminen correctamente
         if 'mt5_executor' in locals():
             mt5_executor.cerrar_conexion()
 

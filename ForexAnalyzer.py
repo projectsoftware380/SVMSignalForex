@@ -9,11 +9,11 @@ class ForexAnalyzer:
         self.api_key_polygon = api_key_polygon
         self.pairs = pairs  # Lista de pares de divisas para analizar
         self.last_trend = {}  # Almacena las tendencias de cada par (incluso los neutrales)
-        self.lock = threading.Lock()
+        self.lock = threading.Lock()  # Añadir el lock para proteger el acceso desde múltiples hilos
 
     def obtener_hora_servidor(self):
         """Obtiene la hora actual del servidor desde la API de Polygon.io."""
-        url = "https://api.polygon.io/v1/marketstatus/now?apiKey=" + self.api_key_polygon
+        url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
         response = requests.get(url)
         if response.status_code == 200:
             server_time = response.json().get("serverTime", None)
@@ -24,31 +24,61 @@ class ForexAnalyzer:
                     return datetime.fromisoformat(server_time).astimezone(pytz.UTC)
         return datetime.utcnow().replace(tzinfo=pytz.UTC)
 
-    def obtener_datos_polygon(self, symbol, timeframe='hour', start_date=None, end_date=None):
-        """Obtiene datos de mercado de Polygon.io en el intervalo de tiempo solicitado."""
-        url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/1/{timeframe}/{start_date}/{end_date}"
+    def obtener_datos_polygon(self, symbol, timeframe='minute', multiplier=4, start_date=None, end_date=None):
+        """
+        Obtiene datos de mercado de Polygon.io en el intervalo de tiempo solicitado y maneja la paginación.
+        Args:
+            symbol: Símbolo a consultar.
+            timeframe: 'minute', 'hour', etc.
+            multiplier: Multiplicador del intervalo (4 para 4 horas).
+            start_date: Fecha de inicio en formato YYYY-MM-DD.
+            end_date: Fecha de fin en formato YYYY-MM-DD.
+        """
+        url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol}/range/{multiplier}/{timeframe}/{start_date}/{end_date}"
         params = {
             'apiKey': self.api_key_polygon,
-            'limit': 50000,
+            'limit': 50000,  # Máximo permitido por la API.
             'sort': 'asc'
         }
-        response = requests.get(url, params=params)
-        if response.status_code == 200:
-            data = response.json().get('results', [])
-            if len(data) == 0:
-                print(f"Advertencia: No se obtuvieron suficientes datos para {symbol}.")
-                return pd.DataFrame()
 
-            df = pd.DataFrame(data)
-            df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
-            df.set_index('timestamp', inplace=True)
-            df.rename(columns={'h': 'High', 'l': 'Low', 'c': 'Close', 'o': 'Open'}, inplace=True)
+        all_data = []  # Para almacenar todos los datos obtenidos.
+        next_url = url  # La URL inicial.
+        
+        while next_url:
+            response = requests.get(next_url, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                results = data.get('results', [])
+                
+                if results:
+                    all_data.extend(results)
+                else:
+                    print(f"No se encontraron resultados adicionales para {symbol}.")
+                    break
 
-            print(f"Datos obtenidos correctamente para {symbol}: {df.shape[0]} filas.")
-            return df[['High', 'Low', 'Close', 'Open']]
-        else:
-            print(f"Error: No se pudieron obtener los datos para {symbol}. Código de estado {response.status_code}")
+                # Verificar si hay una página siguiente en los resultados
+                next_url = data.get('next_url', None)  # Maneja la paginación.
+                if next_url:
+                    print(f"Paginando resultados, siguiente URL: {next_url}")
+                else:
+                    break  # Si no hay `next_url`, no hay más páginas.
+
+            else:
+                print(f"Error: No se pudieron obtener los datos para {symbol}. Código de estado {response.status_code}")
+                break
+
+        if len(all_data) == 0:
+            print(f"Advertencia: No se obtuvieron suficientes datos para {symbol}.")
             return pd.DataFrame()
+
+        # Convertir los datos en DataFrame
+        df = pd.DataFrame(all_data)
+        df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
+        df.set_index('timestamp', inplace=True)
+        df.rename(columns={'h': 'High', 'l': 'Low', 'c': 'Close', 'o': 'Open'}, inplace=True)
+
+        print(f"Datos obtenidos correctamente para {symbol}: {df.shape[0]} filas.")
+        return df[['High', 'Low', 'Close', 'Open']]
 
     def calcular_ichimoku(self, df):
         """Calcula los componentes del indicador Ichimoku."""
@@ -67,12 +97,12 @@ class ForexAnalyzer:
     def obtener_datos_validos(self, symbol_polygon, timeframe='hour', periodos_necesarios=104):
         """Obtiene datos de mercado asegurando que cumplan con el número de períodos necesarios."""
         fecha_actual_servidor = self.obtener_hora_servidor()
-        fecha_inicio_utc = fecha_actual_servidor - timedelta(days=30)
+        fecha_inicio_utc = fecha_actual_servidor - timedelta(days=60)  # Extiende el rango de días para asegurar datos.
         start_date = fecha_inicio_utc.strftime('%Y-%m-%d')
         end_date = fecha_actual_servidor.strftime('%Y-%m-%d')
 
         print(f"Solicitando datos desde {start_date} hasta {end_date} para {symbol_polygon}...")
-        df = self.obtener_datos_polygon(symbol_polygon, timeframe, start_date, end_date)
+        df = self.obtener_datos_polygon(symbol_polygon, timeframe, 4, start_date, end_date)  # Solicitar datos en intervalos de 4 horas.
 
         if df.empty:
             print(f"No se obtuvieron datos válidos para {symbol_polygon}.")

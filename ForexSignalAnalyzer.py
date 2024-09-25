@@ -1,5 +1,3 @@
-# ForexSignalAnalyzer.py
-
 import requests
 import pandas as pd
 import pandas_ta as ta
@@ -7,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import pytz
 import threading
+import MetaTrader5 as mt5  # Asegurarse de que se importe MetaTrader5
 
 class ForexSignalAnalyzer:
     def __init__(self, mt5_executor, api_key_polygon):
@@ -95,6 +94,7 @@ class ForexSignalAnalyzer:
         Analiza las señales de trading para los pares en los que se detectaron reversiones de tendencia.
         """
         if not self.verificar_estado_mercado():
+            print("El mercado no está abierto. No se procesarán señales.")
             return {}
 
         resultados = {}
@@ -125,20 +125,49 @@ class ForexSignalAnalyzer:
         """
         try:
             print(f"Analizando señal para {pair} con reversión {reverso_tendencia}")
+            
+            # Obtener los datos para calcular RSI
             df = self.obtener_datos_rsi(pair)
+            
+            # Generar la señal de trading basada en RSI y reversión
             resultado_senal = self.generar_senal_trading(df, reverso_tendencia)
+            
+            # Si se genera una señal válida de compra o venta
             if resultado_senal and ("Compra" in resultado_senal or "Venta" in resultado_senal):
                 with self.lock:
                     resultados[pair] = resultado_senal
+                
                 if imprimir_senales:
                     print(f"Señal detectada para {pair}: {resultado_senal}")
-                # Ejecutar una orden en MetaTrader 5 según la señal detectada
+                
+                # Determinar el tipo de orden (buy/sell)
                 order_type = "buy" if "Compra" in resultado_senal else "sell"
+                
+                # Asegurarse de que el símbolo está disponible antes de ejecutar la orden
+                symbol_info = mt5.symbol_info(pair)
+                if symbol_info is None or not symbol_info.visible:
+                    print(f"{pair} no encontrado o no visible. Intentando habilitarlo.")
+                    if not mt5.symbol_select(pair, True):
+                        print(f"No se pudo habilitar el símbolo {pair}. Orden no ejecutada.")
+                        return
+
+                # Ejecutar la orden a través del ejecutor de MetaTrader 5
+                print(f"Intentando ejecutar orden {order_type} para {pair}")
                 self.mt5_executor.ejecutar_orden(pair, order_type)
+
         except ValueError as e:
             print(f"Error en el análisis de señales para {pair}: {str(e)}")
         except TypeError as e:
             print(f"Error de tipo en {pair}: {str(e)}")
+        except Exception as e:
+            print(f"Error inesperado al analizar la señal para {pair}: {str(e)}")
 
     def verificar_estado_mercado(self):
-        return True  # Placeholder para la verificación real
+        """
+        Verifica si el mercado está abierto.
+        """
+        try:
+            return mt5.market_info("EURUSD").session_deals > 0  # Ejemplo para verificar si el mercado está abierto
+        except Exception as e:
+            print(f"Error al verificar el estado del mercado: {e}")
+            return False

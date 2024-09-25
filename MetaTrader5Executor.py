@@ -29,6 +29,7 @@ class MetaTrader5Executor:
         self.actualizar_operaciones_abiertas()
 
     def normalizar_par(self, pair):
+        """Normaliza el nombre del par de divisas."""
         return pair.replace("-", "").replace(".", "").upper()
 
     def conectar_mt5(self):
@@ -52,7 +53,6 @@ class MetaTrader5Executor:
 
             for pos in posiciones:
                 tipo_operacion = 'compra' if pos.type == 0 else 'venta'
-                # Normalizar el símbolo
                 symbol_normalizado = self.normalizar_par(pos.symbol)
                 self.operaciones_abiertas[symbol_normalizado] = {
                     'symbol': symbol_normalizado,
@@ -84,20 +84,29 @@ class MetaTrader5Executor:
 
             # Asegurarse de que el símbolo esté disponible
             symbol_info = mt5.symbol_info(symbol)
-            if symbol_info is None:
-                print(f"{symbol} no encontrado, intentando agregarlo.")
+            if symbol_info is None or not symbol_info.visible:
+                print(f"{symbol} no encontrado o no visible, intentando agregarlo.")
                 if not mt5.symbol_select(symbol, True):
                     print(f"No se pudo agregar {symbol}.")
                     return
 
             # Obtener el precio actual
-            price = mt5.symbol_info_tick(symbol).ask if order_type == 'buy' else mt5.symbol_info_tick(symbol).bid
+            symbol_info_tick = mt5.symbol_info_tick(symbol)
+            if symbol_info_tick is None:
+                print(f"No se pudo obtener el precio actual para {symbol}.")
+                return
+
+            price = symbol_info_tick.ask if order_type == 'buy' else symbol_info_tick.bid
+            if price is None:
+                print(f"Precio no disponible para {symbol} al intentar {order_type}.")
+                return
+
             trade_type = mt5.ORDER_TYPE_BUY if order_type == 'buy' else mt5.ORDER_TYPE_SELL
 
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": symbol,
-                "volume": 1.0,
+                "volume": 0.01,
                 "type": trade_type,
                 "price": price,
                 "deviation": 20,
@@ -106,18 +115,19 @@ class MetaTrader5Executor:
             }
 
             result = mt5.order_send(request)
-            if result.retcode == mt5.TRADE_RETCODE_DONE:
-                print(f"Orden ejecutada con éxito para {symbol}")
-                # Actualizar las operaciones abiertas
+            if result is None:
+                print(f"Error al ejecutar la orden para {symbol}: No se recibió respuesta de MetaTrader 5.")
+            elif result.retcode == mt5.TRADE_RETCODE_DONE:
+                print(f"Orden ejecutada con éxito para {symbol} a un precio de {price}")
                 self.actualizar_operaciones_abiertas()
             else:
                 print(f"Error al ejecutar la orden para {symbol}. Código de error: {result.retcode}")
-
-            time.sleep(1)
+                print(f"Detalle completo del resultado: {result}")
 
     def cerrar_operacion(self, ticket):
         """Cierra la operación con el ticket dado."""
         with self.lock:
+            # Buscar la operación en las operaciones abiertas
             posicion = next((op for op in self.operaciones_abiertas.values() if op['ticket'] == ticket), None)
             if posicion is None:
                 print(f"No se encontró la operación con el ticket {ticket}.")
@@ -126,20 +136,34 @@ class MetaTrader5Executor:
             symbol = posicion['symbol']
             close_type = mt5.ORDER_TYPE_SELL if posicion['type'] == 'compra' else mt5.ORDER_TYPE_BUY
 
+            # Obtener el precio adecuado para cerrar la operación
+            tick_info = mt5.symbol_info_tick(symbol)
+            if tick_info is None:
+                print(f"No se pudo obtener el precio actual para {symbol}. Operación no cerrada.")
+                return
+
+            price = tick_info.bid if posicion['type'] == 'compra' else tick_info.ask
+
+            # Preparar la solicitud de cierre de la operación
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": symbol,
                 "volume": posicion['volume'],
                 "type": close_type,
                 "position": ticket,
-                "price": mt5.symbol_info_tick(symbol).bid if posicion['type'] == 'compra' else mt5.symbol_info_tick(symbol).ask,
+                "price": price,
                 "deviation": 20,
                 "magic": 234000,
                 "comment": "Cierre automático"
             }
 
+            # Intentar cerrar la operación
             result = mt5.order_send(request)
-            if result.retcode == mt5.TRADE_RETCODE_DONE:
+            
+            # Verificar si `result` es None antes de acceder a `retcode`
+            if result is None:
+                print(f"Error al cerrar la operación {ticket}: No se recibió respuesta de MetaTrader 5.")
+            elif result.retcode == mt5.TRADE_RETCODE_DONE:
                 print(f"Operación {ticket} cerrada correctamente.")
                 del self.operaciones_abiertas[symbol]  # Eliminar la operación cerrada del diccionario
             else:
