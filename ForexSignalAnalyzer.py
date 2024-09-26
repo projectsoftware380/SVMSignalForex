@@ -6,6 +6,12 @@ from datetime import datetime, timedelta
 import pytz
 import threading
 import MetaTrader5 as mt5
+import logging
+import time
+
+# Configurar logging
+logging.basicConfig(filename='logs/trading_system.log', level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 class ForexSignalAnalyzer:
     def __init__(self, mt5_executor, api_key_polygon):
@@ -15,7 +21,7 @@ class ForexSignalAnalyzer:
 
     def obtener_datos_api(self, symbol, timeframe='minute', multiplier=1, horas=24):
         """
-        Solicita datos directamente a la API de Polygon.io para el símbolo dado.
+        Solicita datos directamente a la API de Polygon.io para el símbolo dado con manejo de errores y reintentos.
         """
         try:
             fecha_fin = datetime.utcnow().replace(tzinfo=pytz.UTC)
@@ -28,28 +34,38 @@ class ForexSignalAnalyzer:
             symbol_polygon = symbol.replace("/", "").replace("-", "").upper()
 
             url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol_polygon}/range/{multiplier}/{timeframe}/{start_date}/{end_date}?apiKey={self.api_key_polygon}&sort=asc"
-            response = requests.get(url)
-            if response.status_code == 200:
-                data = response.json()
-                if 'results' in data:
-                    df = pd.DataFrame(data['results'])
-                    df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
-                    df.set_index('timestamp', inplace=True)
+            intentos = 0
+            max_reintentos = 3
 
-                    if df.empty:
-                        print(f"Advertencia: No se obtuvieron suficientes datos para {symbol}.")
+            while intentos < max_reintentos:
+                try:
+                    response = requests.get(url)
+                    response.raise_for_status()  # Lanza excepción si hay error HTTP
+                    data = response.json()
+                    if 'results' in data:
+                        df = pd.DataFrame(data['results'])
+                        df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
+                        df.set_index('timestamp', inplace=True)
+
+                        if df.empty:
+                            logging.warning(f"Advertencia: No se obtuvieron suficientes datos para {symbol}.")
+                            return pd.DataFrame()
+
+                        logging.info(f"Datos obtenidos correctamente para {symbol}: {df.shape[0]} filas.")
+                        return df[['o', 'h', 'l', 'c']]
+                    else:
+                        logging.warning(f"No se encontraron resultados en la respuesta para {symbol}.")
                         return pd.DataFrame()
+                except requests.exceptions.RequestException as e:
+                    intentos += 1
+                    logging.warning(f"Intento {intentos}/{max_reintentos} fallido al obtener datos para {symbol}: {e}")
+                    time.sleep(5)  # Esperar antes de reintentar
 
-                    print(f"Datos obtenidos correctamente para {symbol}: {df.shape[0]} filas.")
-                    return df[['o', 'h', 'l', 'c']]
-                else:
-                    print(f"No se encontraron resultados en la respuesta para {symbol}.")
-                    return pd.DataFrame()
-            else:
-                print(f"Error en la solicitud para {symbol}: {response.status_code}")
-                return pd.DataFrame()
+            logging.error(f"Error persistente al obtener datos para {symbol} tras múltiples intentos.")
+            return pd.DataFrame()
+
         except Exception as e:
-            print(f"Error al obtener datos de la API para {symbol}: {e}")
+            logging.error(f"Error al obtener datos de la API para {symbol}: {e}")
             return pd.DataFrame()
 
     def obtener_datos_rsi(self, symbol):
@@ -77,13 +93,13 @@ class ForexSignalAnalyzer:
                 raise ValueError("No se pudo calcular el RSI.")
 
             ultimo_rsi = rsi.iloc[-2]  # Usar la penúltima vela para el cálculo del RSI
-            print(f"RSI para {df.index[-2]}: {ultimo_rsi}")
+            logging.info(f"RSI para {df.index[-2]}: {ultimo_rsi}")
 
             if ultimo_rsi > 80 and reverso_tendencia == "Reversión Bajista":
-                print(f"Señal de Venta detectada en {df.index[-2]}")
+                logging.info(f"Señal de Venta detectada en {df.index[-2]}")
                 return "Señal de Venta"
             elif ultimo_rsi < 20 and reverso_tendencia == "Reversión Alcista":
-                print(f"Señal de Compra detectada en {df.index[-2]}")
+                logging.info(f"Señal de Compra detectada en {df.index[-2]}")
                 return "Señal de Compra"
             return None
         except Exception as e:
@@ -94,7 +110,7 @@ class ForexSignalAnalyzer:
         Analiza las señales de trading para los pares en los que se detectaron reversiones de tendencia.
         """
         if not self.verificar_estado_mercado():
-            print("El mercado no está abierto. No se procesarán señales.")
+            logging.info("El mercado no está abierto. No se procesarán señales.")
             return {}
 
         resultados = {}
@@ -111,11 +127,11 @@ class ForexSignalAnalyzer:
 
         # Imprimir el diccionario de señales detectadas
         if resultados:
-            print("\nSeñales detectadas:")
+            logging.info("\nSeñales detectadas:")
             for pair, senal in resultados.items():
-                print(f"{pair}: {senal}")
+                logging.info(f"{pair}: {senal}")
         else:
-            print("No se detectaron señales.")
+            logging.info("No se detectaron señales.")
 
         return resultados
 
@@ -124,7 +140,7 @@ class ForexSignalAnalyzer:
         Función que maneja el análisis de señales para cada par en paralelo.
         """
         try:
-            print(f"Analizando señal para {pair} con reversión {reverso_tendencia}")
+            logging.info(f"Analizando señal para {pair} con reversión {reverso_tendencia}")
             
             # Obtener los datos para calcular RSI
             df = self.obtener_datos_rsi(pair)
@@ -138,7 +154,7 @@ class ForexSignalAnalyzer:
                     resultados[pair] = resultado_senal
                 
                 if imprimir_senales:
-                    print(f"Señal detectada para {pair}: {resultado_senal}")
+                    logging.info(f"Señal detectada para {pair}: {resultado_senal}")
                 
                 # Determinar el tipo de orden (buy/sell)
                 order_type = "buy" if "Compra" in resultado_senal else "sell"
@@ -146,21 +162,21 @@ class ForexSignalAnalyzer:
                 # Asegurarse de que el símbolo está disponible antes de ejecutar la orden
                 symbol_info = mt5.symbol_info(pair)
                 if symbol_info is None or not symbol_info.visible:
-                    print(f"{pair} no encontrado o no visible. Intentando habilitarlo.")
+                    logging.warning(f"{pair} no encontrado o no visible. Intentando habilitarlo.")
                     if not mt5.symbol_select(pair, True):
-                        print(f"No se pudo habilitar el símbolo {pair}. Orden no ejecutada.")
+                        logging.error(f"No se pudo habilitar el símbolo {pair}. Orden no ejecutada.")
                         return
 
                 # Ejecutar la orden a través del ejecutor de MetaTrader 5
-                print(f"Intentando ejecutar orden {order_type} para {pair}")
+                logging.info(f"Intentando ejecutar orden {order_type} para {pair}")
                 self.mt5_executor.ejecutar_orden(pair, order_type)
 
         except ValueError as e:
-            print(f"Error en el análisis de señales para {pair}: {str(e)}")
+            logging.error(f"Error en el análisis de señales para {pair}: {str(e)}")
         except TypeError as e:
-            print(f"Error de tipo en {pair}: {str(e)}")
+            logging.error(f"Error de tipo en {pair}: {str(e)}")
         except Exception as e:
-            print(f"Error inesperado al analizar la señal para {pair}: {str(e)}")
+            logging.error(f"Error inesperado al analizar la señal para {pair}: {str(e)}")
 
     def verificar_estado_mercado(self):
         """
@@ -169,20 +185,17 @@ class ForexSignalAnalyzer:
         url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
         try:
             response = requests.get(url)
-            if response.status_code == 200:
-                # Obtener la parte de "currencies" y verificar el estado de "fx"
-                currencies = response.json().get("currencies", {})
-                fx_status = currencies.get("fx", None)
-                
-                if fx_status == "open":
-                    print("El mercado de Forex está abierto.")
-                    return True
-                else:
-                    print(f"El mercado de Forex está cerrado. Estado actual: {fx_status}")
-                    return False
+            response.raise_for_status()  # Lanza excepción si hay error HTTP
+            # Obtener la parte de "currencies" y verificar el estado de "fx"
+            currencies = response.json().get("currencies", {})
+            fx_status = currencies.get("fx", None)
+            
+            if fx_status == "open":
+                logging.info("El mercado de Forex está abierto.")
+                return True
             else:
-                print(f"Error al consultar el estado del mercado en Polygon: {response.status_code}")
+                logging.info(f"El mercado de Forex está cerrado. Estado actual: {fx_status}")
                 return False
-        except Exception as e:
-            print(f"Error al verificar el estado del mercado: {e}")
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error al consultar el estado del mercado: {e}")
             return False

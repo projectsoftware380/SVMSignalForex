@@ -7,9 +7,15 @@
     "senales_interval": 180,       
     "cierre_interval": 180,
     "pairs": [
-        "EUR-USD",  "USD-JPY", "GBP-USD", "AUD-USD", "USD-CHF", "USD-CAD", "NZD-USD", 
+        "EUR-USD", "USD-JPY", "GBP-USD", "AUD-USD", "USD-CHF", "USD-CAD", "NZD-USD", 
         "EUR-JPY", "GBP-JPY", "AUD-JPY", "NZD-JPY", "CAD-JPY", "CHF-JPY", "EUR-GBP", 
-        "EUR-AUD", "EUR-CAD", "EUR-NZD", "GBP-AUD", "GBP-CAD", "GBP-NZD" 
+        "EUR-AUD", "EUR-CAD", "EUR-NZD", "GBP-AUD", "GBP-CAD", "GBP-NZD",
+        "USD-TRY", "EUR-TRY", "USD-ZAR", "EUR-ZAR", "USD-SGD", "EUR-SGD", 
+        "USD-MXN", "EUR-MXN", "USD-PLN", "EUR-PLN", "USD-HKD", "EUR-HKD",
+        "USD-THB", "EUR-THB", "USD-RUB", "EUR-RUB", "USD-CZK", "EUR-CZK", 
+        "USD-HUF", "EUR-HUF", "USD-DKK", "EUR-DKK", "USD-NOK", "EUR-NOK", 
+        "USD-SEK", "EUR-SEK", "USD-ILS", "EUR-ILS",
+        "XAU-USD", "XAG-USD"
     ],
     "usar_sentimiento_mercado": false,
     "max_loss_level": -1000,  
@@ -17,5 +23,3 @@
     "trailing_stop_percentage": 30,
     "monitoreo_intervalo": 10 
 }
-
-

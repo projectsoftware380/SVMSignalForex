@@ -1,8 +1,22 @@
+import os
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
 import pytz
 import threading
+import time
+import logging
+
+# Crear el directorio 'logs' si no existe
+log_directory = 'logs'
+if not os.path.exists(log_directory):
+    os.makedirs(log_directory)
+
+# Configurar logging
+logging.basicConfig(filename=os.path.join(log_directory, 'trading_system.log'),
+                    level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 class ForexAnalyzer:
     def __init__(self, api_key_polygon, pairs):
@@ -12,16 +26,26 @@ class ForexAnalyzer:
         self.lock = threading.Lock()  # Añadir el lock para proteger el acceso desde múltiples hilos
 
     def obtener_hora_servidor(self):
-        """Obtiene la hora actual del servidor desde la API de Polygon.io."""
+        """Obtiene la hora actual del servidor desde la API de Polygon.io con reintentos."""
         url = f"https://api.polygon.io/v1/marketstatus/now?apiKey={self.api_key_polygon}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            server_time = response.json().get("serverTime", None)
-            if server_time:
-                try:
-                    return datetime.strptime(server_time, '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
-                except ValueError:
-                    return datetime.fromisoformat(server_time).astimezone(pytz.UTC)
+        intentos = 0
+        max_reintentos = 3
+
+        while intentos < max_reintentos:
+            try:
+                response = requests.get(url)
+                response.raise_for_status()  # Lanzar error si el estado HTTP no es 200
+                server_time = response.json().get("serverTime", None)
+                if server_time:
+                    try:
+                        return datetime.strptime(server_time, '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
+                    except ValueError:
+                        return datetime.fromisoformat(server_time).astimezone(pytz.UTC)
+            except requests.exceptions.RequestException as e:
+                intentos += 1
+                logging.warning(f"Intento {intentos}/{max_reintentos} fallido al obtener la hora del servidor: {e}")
+                time.sleep(5)  # Esperar 5 segundos antes de reintentar
+        logging.error("Error persistente al obtener la hora del servidor tras múltiples intentos.")
         return datetime.utcnow().replace(tzinfo=pytz.UTC)
 
     def obtener_datos_polygon(self, symbol, timeframe='minute', multiplier=4, start_date=None, end_date=None):
@@ -40,35 +64,38 @@ class ForexAnalyzer:
             'limit': 50000,  # Máximo permitido por la API.
             'sort': 'asc'
         }
-
         all_data = []  # Para almacenar todos los datos obtenidos.
         next_url = url  # La URL inicial.
-        
-        while next_url:
-            response = requests.get(next_url, params=params)
-            if response.status_code == 200:
+        intentos = 0
+        max_reintentos = 3
+
+        while next_url and intentos < max_reintentos:
+            try:
+                response = requests.get(next_url, params=params)
+                response.raise_for_status()
                 data = response.json()
                 results = data.get('results', [])
-                
+
                 if results:
                     all_data.extend(results)
                 else:
-                    print(f"No se encontraron resultados adicionales para {symbol}.")
+                    logging.warning(f"No se encontraron resultados adicionales para {symbol}.")
                     break
 
                 # Verificar si hay una página siguiente en los resultados
-                next_url = data.get('next_url', None)  # Maneja la paginación.
+                next_url = data.get('next_url', None)
                 if next_url:
-                    print(f"Paginando resultados, siguiente URL: {next_url}")
+                    logging.info(f"Paginando resultados, siguiente URL: {next_url}")
                 else:
-                    break  # Si no hay `next_url`, no hay más páginas.
+                    break  # Si no hay `next_url`, no hay más páginas
 
-            else:
-                print(f"Error: No se pudieron obtener los datos para {symbol}. Código de estado {response.status_code}")
-                break
+            except requests.exceptions.RequestException as e:
+                intentos += 1
+                logging.warning(f"Intento {intentos}/{max_reintentos} fallido al obtener datos para {symbol}: {e}")
+                time.sleep(5)  # Esperar antes de reintentar
 
         if len(all_data) == 0:
-            print(f"Advertencia: No se obtuvieron suficientes datos para {symbol}.")
+            logging.error(f"No se obtuvieron suficientes datos para {symbol} tras múltiples intentos.")
             return pd.DataFrame()
 
         # Convertir los datos en DataFrame
@@ -77,13 +104,13 @@ class ForexAnalyzer:
         df.set_index('timestamp', inplace=True)
         df.rename(columns={'h': 'High', 'l': 'Low', 'c': 'Close', 'o': 'Open'}, inplace=True)
 
-        print(f"Datos obtenidos correctamente para {symbol}: {df.shape[0]} filas.")
+        logging.info(f"Datos obtenidos correctamente para {symbol}: {df.shape[0]} filas.")
         return df[['High', 'Low', 'Close', 'Open']]
 
     def calcular_ichimoku(self, df):
         """Calcula los componentes del indicador Ichimoku."""
         if len(df) < 78:
-            print(f"Advertencia: Se requieren al menos 78 períodos para calcular Ichimoku. Solo se obtuvieron {len(df)}.")
+            logging.warning(f"Se requieren al menos 78 períodos para calcular Ichimoku. Solo se obtuvieron {len(df)}.")
             return pd.DataFrame()
 
         df['Tenkan-sen'] = (df['High'].rolling(window=9).max() + df['Low'].rolling(window=9).min()) / 2
@@ -101,28 +128,28 @@ class ForexAnalyzer:
         start_date = fecha_inicio_utc.strftime('%Y-%m-%d')
         end_date = fecha_actual_servidor.strftime('%Y-%m-%d')
 
-        print(f"Solicitando datos desde {start_date} hasta {end_date} para {symbol_polygon}...")
-        df = self.obtener_datos_polygon(symbol_polygon, timeframe, 4, start_date, end_date)  # Solicitar datos en intervalos de 4 horas.
+        logging.info(f"Solicitando datos desde {start_date} hasta {end_date} para {symbol_polygon}...")
+        df = self.obtener_datos_polygon(symbol_polygon, timeframe, 4, start_date, end_date)
 
         if df.empty:
-            print(f"No se obtuvieron datos válidos para {symbol_polygon}.")
+            logging.warning(f"No se obtuvieron datos válidos para {symbol_polygon}.")
             return pd.DataFrame()
 
         if len(df) >= periodos_necesarios:
             df = df.tail(periodos_necesarios)
             return df
         else:
-            print(f"No se pudieron obtener suficientes datos válidos para {symbol_polygon}. Solo se obtuvieron {len(df)}.")
+            logging.warning(f"No se pudieron obtener suficientes datos válidos para {symbol_polygon}. Solo se obtuvieron {len(df)}.")
             return pd.DataFrame()
 
     def analizar_par(self, pair):
         """Realiza el análisis del par de divisas utilizando el indicador Ichimoku."""
-        print(f"Iniciando análisis para {pair}")
+        logging.info(f"Iniciando análisis para {pair}")
         symbol_polygon = pair.replace("-", "")
         df = self.obtener_datos_validos(symbol_polygon, 'hour', 104)
 
         if df.empty:
-            print(f"No se obtuvieron datos válidos para {pair}")
+            logging.warning(f"No se obtuvieron datos válidos para {pair}")
             tendencia = "Neutral"
             with self.lock:
                 self.last_trend[pair] = tendencia
@@ -131,7 +158,7 @@ class ForexAnalyzer:
         df = self.calcular_ichimoku(df)
 
         if df.empty:
-            print(f"No se pudieron calcular los valores de Ichimoku para {pair}")
+            logging.warning(f"No se pudieron calcular los valores de Ichimoku para {pair}")
             tendencia = "Neutral"
             with self.lock:
                 self.last_trend[pair] = tendencia
@@ -143,14 +170,13 @@ class ForexAnalyzer:
         if len(df) >= 26:
             precio_hace_26_periodos = df['Close'].iloc[-26]
         else:
-            print(f"No se pudo obtener el precio de hace 26 periodos para {pair}")
+            logging.warning(f"No se pudo obtener el precio de hace 26 periodos para {pair}")
             tendencia = "Neutral"
             with self.lock:
                 self.last_trend[pair] = tendencia
             return tendencia
 
-        print(f"Valores de Ichimoku para {pair} (Fecha: {fecha_ultimo_valor}):")
-        print(ultimo_valor[['Close', 'Tenkan-sen', 'Kijun-sen', 'Senkou Span A', 'Senkou Span B', 'Chikou Span']])
+        logging.info(f"Valores de Ichimoku para {pair} (Fecha: {fecha_ultimo_valor}): {ultimo_valor[['Close', 'Tenkan-sen', 'Kijun-sen', 'Senkou Span A', 'Senkou Span B', 'Chikou Span']]}")
 
         # Verificación de tendencia alcista
         if (ultimo_valor['Senkou Span A'] > ultimo_valor['Senkou Span B'] and
