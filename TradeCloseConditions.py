@@ -1,4 +1,13 @@
 import logging
+import MetaTrader5 as mt5
+import traceback
+
+# Configuración básica de logging
+logging.basicConfig(
+    filename='logs/trading_system.log',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 class TradeCloseConditions:
     def __init__(self, mt5_executor):
@@ -39,7 +48,12 @@ class TradeCloseConditions:
                         return False
                 except Exception as e:
                     logging.error(f"Error inesperado al cerrar la operación {operacion_abierta['ticket']}: {str(e)}")
+                    logging.error(traceback.format_exc())
                     return False
+                finally:
+                    # Cerrar conexión para evitar fugas de recursos en hilos
+                    self.cerrar_conexion_mt5()
+
             else:
                 logging.info(f"No se cumplen condiciones de cierre por tendencia contraria para {symbol}.")
         else:
@@ -76,3 +90,13 @@ class TradeCloseConditions:
             if operacion_symbol_normalizado == symbol_normalizado:
                 return operacion
         return None
+
+    def cerrar_conexion_mt5(self):
+        """Cierra la conexión con MetaTrader 5 para liberar recursos."""
+        try:
+            logging.info("Cerrando conexión con MetaTrader 5...")
+            mt5.shutdown()
+            logging.info("Conexión con MetaTrader 5 cerrada correctamente.")
+        except Exception as e:
+            logging.error(f"Error al cerrar la conexión con MetaTrader 5: {e}")
+            logging.error(traceback.format_exc())

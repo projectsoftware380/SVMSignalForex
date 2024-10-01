@@ -3,9 +3,10 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 from concurrent.futures import ThreadPoolExecutor
-from ForexAnalyzer import ForexAnalyzer
-from ForexReversalAnalyzer import ForexReversalAnalyzer
-from ForexSignalAnalyzer import ForexSignalAnalyzer
+import MetaTrader5 as mt5
+from tendencias.ForexAnalyzer import ForexAnalyzer
+from reversals.ForexReversalAnalyzer import ForexReversalAnalyzer
+from src.senales.ForexSignalAnalyzer import ForexSignalAnalyzer
 from MetaTrader5Executor import MetaTrader5Executor
 from TradeCloseConditions import TradeCloseConditions
 
@@ -35,13 +36,14 @@ def main():
     try:
         with open("config.json") as config_file:
             config = json.load(config_file)
-        logging.info("Configuración cargada correctamente")
+        logging.info("Configuración cargada correctamente.")
     except Exception as e:
         logging.error(f"Error al cargar la configuración: {e}")
         return
 
     # Instanciar MetaTrader5Executor
     try:
+        logging.info("Instanciando MetaTrader5Executor...")
         mt5_executor = MetaTrader5Executor(
             config['max_loss_level'],
             config['profit_trailing_level'],
@@ -52,11 +54,13 @@ def main():
         return
 
     # Instanciar TradeCloseConditions con mt5_executor
+    logging.info("Instanciando TradeCloseConditions...")
     close_conditions = TradeCloseConditions(mt5_executor)
     mt5_executor.close_conditions = close_conditions
 
-    # Instanciar ForexAnalyzer con la clave API y pares de divisas
+    # Instanciar ForexAnalyzer, ForexReversalAnalyzer, y ForexSignalAnalyzer
     try:
+        logging.info("Instanciando analizadores Forex...")
         forex_analyzer = ForexAnalyzer(config['api_key_polygon'], config['pairs'])
         forex_reversal_analyzer = ForexReversalAnalyzer(mt5_executor, config['api_key_polygon'])
         forex_signal_analyzer = ForexSignalAnalyzer(mt5_executor, config['api_key_polygon'])
@@ -64,19 +68,21 @@ def main():
         logging.error(f"Error al instanciar analizadores: {e}")
         return
 
+    # Verificar la conexión con MetaTrader 5
     if not mt5_executor.conectado:
-        logging.error("Error al conectar con MetaTrader 5")
+        logging.error("Error al conectar con MetaTrader 5.")
         return
     else:
-        logging.info("Conexión a MetaTrader 5 exitosa")
+        logging.info("Conexión a MetaTrader 5 exitosa.")
 
-    # Definir funciones de operaciones
+    # Funciones de evaluación y monitoreo
     def evaluar_tendencias():
         logging.info("Iniciando evaluación de tendencias...")
         while not detener_hilos:
             try:
                 for pair in config['pairs']:
                     pair_normalizado = normalizar_par(pair)
+                    logging.info(f"Evaluando tendencia para el par: {pair}")
                     forex_analyzer.analizar_par(pair_normalizado)
 
                 if imprimir_tendencias:
@@ -115,6 +121,7 @@ def main():
                 with forex_reversal_analyzer.lock:
                     resultados_reversiones = forex_reversal_analyzer.resultados.copy()
                 if resultados_reversiones:
+                    logging.info(f"Analizando señales para reversiones detectadas: {resultados_reversiones}")
                     forex_signal_analyzer.analizar_senales(resultados_reversiones, imprimir_senales)
                 else:
                     logging.info("No hay reversiones para analizar señales.")
@@ -157,13 +164,17 @@ def main():
 
     def monitorear_balance():
         logging.info("Iniciando monitoreo de balance...")
-        mt5_executor.monitorear_equidad_global(monitoreo_interval=config.get('monitoreo_interval', 60))
-
-        global detener_hilos
-        detener_hilos = True  # Detener todos los hilos cuando se alcance el límite de balance
+        try:
+            mt5_executor.monitorear_equidad_global(monitoreo_interval=config.get('monitoreo_interval', 60))
+            logging.info("Monitoreo de balance completado. Deteniendo hilos.")
+            global detener_hilos
+            detener_hilos = True  # Detener todos los hilos cuando se alcance el límite de balance
+        except Exception as e:
+            logging.error(f"Error durante el monitoreo de balance: {str(e)}")
 
     # Usar ThreadPoolExecutor en lugar de hilos manuales
     with ThreadPoolExecutor(max_workers=5) as executor:
+        logging.info("Iniciando ThreadPoolExecutor...")
         executor.submit(evaluar_tendencias)
         executor.submit(evaluar_reversiones)
         executor.submit(evaluar_senales)
@@ -178,8 +189,10 @@ def main():
         logging.info("Proceso interrumpido manualmente.")
     finally:
         detener_hilos = True
+        logging.info("Cerrando ejecución de hilos...")
         if 'mt5_executor' in locals():
             mt5_executor.cerrar_conexion()
+        logging.info("Programa finalizado.")
 
 if __name__ == "__main__":
     main()
