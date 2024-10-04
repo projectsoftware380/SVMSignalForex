@@ -3,7 +3,7 @@ import pandas as pd
 import talib
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 
 # Configuración básica de logging
@@ -24,7 +24,7 @@ class CandlePatternAnalyzer:
         """
         try:
             logging.info(f"Solicitando datos para {symbol} desde la API de Polygon.io")
-            fecha_fin = datetime.utcnow().replace(tzinfo=pytz.UTC)
+            fecha_fin = datetime.now(timezone.utc)  # Reemplazado por timezone-aware UTC object
             fecha_inicio = fecha_fin - timedelta(hours=horas)
 
             start_date = fecha_inicio.strftime('%Y-%m-%d')
@@ -32,7 +32,8 @@ class CandlePatternAnalyzer:
 
             symbol_polygon = symbol.replace("/", "").replace("-", "").upper()
 
-            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol_polygon}/range/{multiplier}/{timeframe}/{start_date}/{end_date}?apiKey={self.api_key_polygon}&sort=asc"
+            # URL con sort=desc para obtener los datos más recientes primero
+            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol_polygon}/range/{multiplier}/{timeframe}/{start_date}/{end_date}?apiKey={self.api_key_polygon}&sort=desc"
             response = requests.get(url)
             response.raise_for_status()
             data = response.json()
@@ -48,8 +49,8 @@ class CandlePatternAnalyzer:
 
                 logging.info(f"Datos obtenidos correctamente para {symbol}: {df.shape[0]} filas.")
                 
-                # Retornamos todos los datos menos la última vela en formación
-                return df[['o', 'h', 'l', 'c']].iloc[:-1]  # open, high, low, close, menos la última fila (vela)
+                # Retornar los datos, excluyendo la última vela (en formación)
+                return df[['o', 'h', 'l', 'c']].iloc[1:]  # Excluir la primera (más reciente) y trabajar con la penúltima
             else:
                 logging.warning(f"No se encontraron resultados en la respuesta para {symbol}.")
                 return pd.DataFrame()
@@ -73,9 +74,9 @@ class CandlePatternAnalyzer:
                 result = getattr(talib, pattern)(df['o'], df['h'], df['l'], df['c'])
 
                 # Penúltimo valor indica el patrón detectado (positivo para alcista, negativo para bajista)
-                if result.iloc[-2] > 0 and pattern in patrones_alcistas:
+                if result.iloc[0] > 0 and pattern in patrones_alcistas:
                     patrones[pattern] = 'alcista'
-                elif result.iloc[-2] < 0 and pattern in patrones_bajistas:
+                elif result.iloc[0] < 0 and pattern in patrones_bajistas:
                     patrones[pattern] = 'bajista'
 
             if patrones:

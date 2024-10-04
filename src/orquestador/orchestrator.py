@@ -5,18 +5,20 @@ import sys
 import os
 import json
 from flask import Flask, jsonify
-from threading import Thread
+from threading import Thread, Event
+from datetime import datetime, timedelta
+import pytz
 
 # Ajustar el sys.path para incluir el directorio base del proyecto
 project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_dir)
 
-# Crear el directorio de logs si no existe
-log_dir = os.path.join(project_dir, 'src', 'logs')
+# Crear el directorio de logs en la carpeta 'logs'
+log_dir = os.path.join(project_dir, 'logs')
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
-# Configurar logging para que el log se guarde en 'src/logs/orchestrator.log'
+# Configurar logging para que el log se guarde en 'logs/orchestrator.log'
 logging.basicConfig(
     filename=os.path.join(log_dir, 'orchestrator.log'),
     level=logging.INFO,
@@ -25,10 +27,15 @@ logging.basicConfig(
 
 app = Flask(__name__)
 
+BUFFER_TIME = 30  # Buffer de 30 segundos antes de consultar la nueva vela
+LOG_FILE = os.path.join(log_dir, 'DataBase.log')  # Archivo de log de la base de datos
+
 class SignalOrchestrator:
-    def __init__(self, config):
+    def __init__(self, config, db_sync_event):
         self.config = config
         self.servers = {}
+        self.db_sync_event = db_sync_event  # Evento para sincronizar con la base de datos
+        self.db_synced = False  # Flag para verificar si ya se ha detectado la sincronización
 
     def start_server(self, name, command):
         """Inicia un servidor en un subproceso."""
@@ -45,10 +52,31 @@ class SignalOrchestrator:
             process.terminate()  # Enviar señal de terminación
             logging.info(f"Servidor {name} detenido.")
 
+    def monitor_log_file(self):
+        """Monitorea el archivo de log de la base de datos y activa el evento de sincronización al detectar el mensaje."""
+        logging.info("Monitoreando el archivo de log para detectar la actualización de la base de datos.")
+        
+        # Verificar si el archivo existe, si no, crearlo vacío
+        if not os.path.exists(LOG_FILE):
+            with open(LOG_FILE, 'w') as f:
+                pass  # Crea el archivo vacío si no existe
+
+        with open(LOG_FILE, 'r') as f:
+            f.seek(0, os.SEEK_END)  # Mover el puntero al final del archivo
+
+            while not self.db_synced:
+                line = f.readline()
+                if "Base de datos actualizada correctamente" in line:
+                    logging.info("Se detectó la actualización de la base de datos en el archivo de log.")
+                    self.db_sync_event.set()  # Activar el evento de sincronización
+                    self.db_synced = True
+                    break
+                time.sleep(1)  # Esperar un segundo antes de volver a verificar
+
     def read_json_file(self, filepath):
         """Lee un archivo JSON y devuelve su contenido."""
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 data = json.load(f)
             logging.info(f"Archivo {filepath} leído correctamente.")
             return data
@@ -68,61 +96,12 @@ class SignalOrchestrator:
         except Exception as e:
             logging.error(f"Error al escribir {filepath}: {e}")
 
-    def generate_signals(self):
-        """Genera señales basadas en los archivos de tendencias, reversiones, señales y patrones."""
-        try:
-            # Leer los archivos JSON
-            tendencias = self.read_json_file('src/data/tendencias.json')
-            reversiones = self.read_json_file('src/data/reversiones.json')
-            signals = self.read_json_file('src/data/signals.json')
-            patrones = self.read_json_file('src/data/candle_patterns.json')
-
-            # Generar las señales basadas en las coincidencias
-            generated_signals = []
-            for pair, tendencia in tendencias.items():
-                if pair in reversiones and pair in signals and pair in patrones:
-                    reversion = reversiones.get(pair, {})
-                    senal = signals.get(pair, {})
-                    patron = patrones.get(pair, {})
-
-                    # Combinaciones de señales
-                    if tendencia and reversion and senal:
-                        generated_signals.append({
-                            "pair": pair,
-                            "tipo": "Tipo 1",  # Tendencia + Reversión + Señal
-                            "riesgo": "100%"
-                        })
-                    if tendencia and reversion and '3m' in patron:
-                        generated_signals.append({
-                            "pair": pair,
-                            "tipo": "Tipo 2",  # Tendencia + Reversión + Patrón (3 minutos)
-                            "riesgo": "100%"
-                        })
-                    if tendencia and senal:
-                        generated_signals.append({
-                            "pair": pair,
-                            "tipo": "Tipo 3",  # Tendencia + Señal
-                            "riesgo": "50%"
-                        })
-                    if tendencia and ('4h' in patron or '15m' in patron):
-                        generated_signals.append({
-                            "pair": pair,
-                            "tipo": "Tipo 4",  # Tendencia + Patrón (4h o 15m)
-                            "riesgo": "50%"
-                        })
-
-            # Escribir las señales generadas en generated_signals.json
-            self.write_json_file('src/data/generated_signals.json', generated_signals)
-            logging.info("Señales generadas y guardadas en generated_signals.json.")
-
-            return generated_signals
-
-        except Exception as e:
-            logging.error(f"Error al generar señales: {e}")
-            return []
-
     def start_all_servers(self):
         """Inicia todos los servidores necesarios para el análisis."""
+        logging.info("Esperando a que la base de datos esté completamente actualizada antes de iniciar los servidores de análisis.")
+        self.db_sync_event.wait()  # Espera a que el evento de sincronización se active
+
+        logging.info("Base de datos actualizada. Iniciando servidores de análisis.")
         # Iniciar el servidor de tendencias
         self.start_server("Tendencia", "python src/services/forex_analyzer_server.py")
 
@@ -151,9 +130,38 @@ config = {
     'patrones_server': 'localhost:5004'
 }
 
-orchestrator = SignalOrchestrator(config)
+# Crear el evento de sincronización
+db_sync_event = Event()
 
-# Iniciar todos los servidores
+# Inicializar el orquestador con el evento de sincronización
+orchestrator = SignalOrchestrator(config, db_sync_event)
+
+# Función para iniciar el orquestador de la base de datos en un subproceso
+def start_database_orchestrator():
+    try:
+        logging.info("Iniciando el orquestador de la base de datos.")
+        # Ejecutar el script Data_Base_Server.py en lugar de database_orchestrator.py
+        subprocess.run("python src/services/Data_Base_Server.py", shell=True)
+        logging.info("Orquestador de la base de datos finalizado correctamente.")
+    except Exception as e:
+        logging.error(f"Error al iniciar el orquestador de la base de datos: {e}")
+
+# Iniciar el orquestador de la base de datos en un hilo separado
+def start_database_thread():
+    db_thread = Thread(target=start_database_orchestrator)
+    db_thread.daemon = True
+    db_thread.start()
+
+# Función para monitorear el log de la base de datos en un hilo separado
+def start_log_monitoring_thread():
+    log_thread = Thread(target=orchestrator.monitor_log_file)
+    log_thread.daemon = True
+    log_thread.start()
+
+start_database_thread()
+start_log_monitoring_thread()
+
+# Iniciar todos los servidores una vez que la base de datos esté lista
 orchestrator.start_all_servers()
 
 # Iniciar la generación automática de señales cada 3 minutos en un hilo separado

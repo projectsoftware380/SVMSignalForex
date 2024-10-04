@@ -1,5 +1,3 @@
-# forex_analyzer_server.py
-
 import argparse
 import os
 import json
@@ -9,7 +7,6 @@ import time
 from datetime import datetime, timezone
 from flask import Flask, jsonify, request
 import sys
-import pytz
 
 # Añadir el directorio 'src' al sys.path para que Python lo encuentre
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -37,15 +34,15 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Ruta del archivo JSON que almacenará las tendencias
-TENDENCIAS_FILE = 'src/data/tendencias.json'
+TENDENCIAS_FILE = os.path.join(src_dir, 'src', 'data', 'tendencias.json')
 
-# Cargar configuración desde config.json (que contiene los pares)
-CONFIG_FILE = 'src/config/config.json'
+# Cargar configuración desde config.json (que contiene los pares y la configuración de la base de datos)
+CONFIG_FILE = os.path.join(src_dir, 'src', 'config', 'config.json')
 with open(CONFIG_FILE, "r") as f:
     config = json.load(f)
 
-# Instanciar ForexAnalyzer con la API key y los pares del config.json
-forex_analyzer = ForexAnalyzer(api_key_polygon=config["api_key_polygon"], pairs=config["pairs"])
+# Instanciar ForexAnalyzer con la configuración de la base de datos y los pares
+forex_analyzer = ForexAnalyzer(db_config=config["db_config"], pairs=config["pairs"])
 
 def guardar_tendencias(tendencias):
     """Guarda las tendencias en el archivo JSON."""
@@ -148,21 +145,12 @@ if __name__ == '__main__':
             try:
                 # Realizar un análisis inmediato al iniciar
                 forex_analyzer.analizar_pares()
-                forex_analyzer.guardar_tendencias_en_json(datetime.now(timezone.utc))
+                guardar_tendencias(forex_analyzer.last_trend)
                 logger.info("Análisis y guardado de tendencias completado al iniciar.")
 
-                tiempo_restante, _ = forex_analyzer.tiempo_para_proxima_vela()
+                tiempo_restante = 4 * 3600  # Esperar 4 horas
                 logger.info(f"Esperando {tiempo_restante} segundos para la próxima vela.")
                 time.sleep(tiempo_restante)
-
-                while True:
-                    logger.info("Iniciando análisis después de nueva vela.")
-                    forex_analyzer.analizar_pares()
-                    forex_analyzer.guardar_tendencias_en_json(datetime.now(timezone.utc))
-                    logger.info("Análisis y guardado de tendencias completado.")
-                    tiempo_restante = 4 * 3600  # Esperar 4 horas
-                    logger.info(f"Esperando {tiempo_restante} segundos para la próxima vela.")
-                    time.sleep(tiempo_restante)
             except Exception as e:
                 logger.error(f"Error en sincronizar_con_nueva_vela: {str(e)}")
                 time.sleep(60)  # Esperar antes de reintentar

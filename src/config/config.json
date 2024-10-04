@@ -1,4 +1,10 @@
 {
+    "db_config": {
+        "host": "localhost",
+        "database": "forex_data",
+        "user": "postgres",
+        "password": "nuevacontrasena123"
+    },
     "api_key_polygon": "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR",
     "api_token_forexnews": "25wpwpebrawmafmvjuagciubjoylthzaybzvbtqk",
     "loop_interval": 60,

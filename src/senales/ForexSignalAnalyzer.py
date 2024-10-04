@@ -59,7 +59,7 @@ class ForexSignalAnalyzer:
 
             symbol_polygon = symbol.replace("/", "").replace("-", "").upper()
 
-            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol_polygon}/range/{multiplier}/{timeframe}/{start_date}/{end_date}?apiKey={self.api_key_polygon}&sort=asc"
+            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol_polygon}/range/{multiplier}/{timeframe}/{start_date}/{end_date}?apiKey={self.api_key_polygon}&sort=desc"
             logging.debug(f"URL generada para {symbol}: {url}")
 
             response = requests.get(url, timeout=10)

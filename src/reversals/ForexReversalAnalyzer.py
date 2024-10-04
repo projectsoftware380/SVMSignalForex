@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import pandas_ta as ta
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 import logging
 import os
@@ -50,7 +50,7 @@ class ForexReversalAnalyzer:
                 raise ValueError("No se pudo obtener la hora del servidor.")
         except Exception as e:
             logging.error(f"Error al obtener la hora del servidor: {e}")
-            return datetime.utcnow().replace(tzinfo=pytz.UTC)
+            return datetime.now(timezone.utc)  # Usar datetime.now con timezone UTC
 
     def obtener_datos_api(self, symbol, timeframe='minute', multiplier=15, horas=75):
         """Solicita datos de la API de Polygon.io y los devuelve en un DataFrame."""
@@ -63,7 +63,8 @@ class ForexReversalAnalyzer:
 
             symbol_polygon = symbol.replace("/", "").replace("-", "").upper()
 
-            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol_polygon}/range/{multiplier}/{timeframe}/{start_date}/{end_date}?apiKey={self.api_key_polygon}&sort=asc"
+            # Cambiar a sort=desc para ordenar de nuevo a viejo
+            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol_polygon}/range/{multiplier}/{timeframe}/{start_date}/{end_date}?apiKey={self.api_key_polygon}&sort=desc"
             logging.info(f"Consultando datos para {symbol} con URL: {url}")
             
             response = requests.get(url)
@@ -75,13 +76,18 @@ class ForexReversalAnalyzer:
                 df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
                 df.set_index('timestamp', inplace=True)
                 logging.info(f"Datos obtenidos para {symbol}: {df.shape[0]} filas.")
-                return df[['o', 'h', 'l', 'c']]
+
+                # Usar todos los datos para indicadores y tomar solo el penúltimo valor de 'Close'
+                penultimo_close = df[['c']].iloc[0]  # El último valor de cierre
+                logging.info(f"Penúltimo valor de cierre para {symbol}: {penultimo_close['c']}")
+
+                return df[['o', 'h', 'l', 'c']], penultimo_close
             else:
                 logging.warning(f"No se encontraron resultados en la API para {symbol}.")
-                return pd.DataFrame()
+                return pd.DataFrame(), pd.DataFrame()
         except Exception as e:
             logging.error(f"Error al obtener datos de la API para {symbol}: {e}")
-            return pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame()
 
     def calcular_fibonacci(self, df):
         """Calcula los niveles de Fibonacci basados en los últimos 20 períodos."""
@@ -110,7 +116,7 @@ class ForexReversalAnalyzer:
 
     def obtener_datos_bollinger(self, symbol):
         """Obtiene y calcula las Bandas de Bollinger para el símbolo."""
-        df = self.obtener_datos_api(symbol)
+        df, penultimo_close = self.obtener_datos_api(symbol)
         if df.empty:
             raise ValueError(f"Los datos obtenidos para {symbol} no son suficientes o están vacíos.")
 
@@ -119,7 +125,7 @@ class ForexReversalAnalyzer:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         df = df.dropna()
 
-        if len(df) < 22:
+        if len(df) < 1:
             raise ValueError(f"No hay suficientes datos para calcular las Bandas de Bollinger para {symbol}.")
 
         bollinger = ta.bbands(df['Close'], length=20, std=2)
@@ -127,37 +133,36 @@ class ForexReversalAnalyzer:
         df['upper'] = bollinger['BBU_20_2.0']
         df['lower'] = bollinger['BBL_20_2.0']
 
-        logging.info(f"Bollinger Bandas calculadas. Línea central: {df['mid'].iloc[-2]}")
-        return df
+        logging.info(f"Bollinger Bandas calculadas. Línea central: {df['mid'].iloc[0]}")
+        return df, penultimo_close
 
     def detectar_retroceso(self, df, fibonacci_alcista, fibonacci_bajista):
         """Detecta un retroceso basado en Fibonacci y las Bandas de Bollinger."""
         try:
-            # Usar la penúltima vela completa
-            precio_close = df['Close'].iloc[-2]  # Asegurar que estamos usando la penúltima vela para evitar datos en formación
-            banda_media = df['mid'].iloc[-2]  # Línea central de Bollinger
+            # Usar la primera vela (más reciente) ya formada
+            precio_close = df['Close'].iloc[0]  
+            banda_media = df['mid'].iloc[0]  
 
             # Reversión Alcista: Si el precio está por debajo del 23.6% y por encima del menor entre 76.8% y la banda media
             if precio_close < fibonacci_alcista['23.6%'] and precio_close > min(banda_media, fibonacci_alcista['76.8%']):
-                logging.info(f"Retroceso Alcista detectado en {df.index[-2]} con precio de cierre {precio_close}")
+                logging.info(f"Retroceso Alcista detectado en {df.index[0]} con precio de cierre {precio_close}")
                 return "Reversión Alcista"
 
             # Reversión Bajista: Si el precio está por encima del 23.6% y por debajo del mayor entre 76.8% y la banda media
             if precio_close > fibonacci_bajista['23.6%'] and precio_close < max(banda_media, fibonacci_bajista['76.8%']):
-                logging.info(f"Retroceso Bajista detectado en {df.index[-2]} con precio de cierre {precio_close}")
+                logging.info(f"Retroceso Bajista detectado en {df.index[0]} con precio de cierre {precio_close}")
                 return "Reversión Bajista"
 
         except Exception as e:
             logging.error(f"Error al detectar retroceso: {e}")
 
-        # Si no se cumplen las condiciones de reversión
         return "Sin Reversión"
 
     def analizar_reversion_para_par(self, symbol):
         """Función que analiza las reversiones para un par de divisas."""
         try:
             logging.info(f"Analizando reversión para {symbol}")
-            df = self.obtener_datos_bollinger(symbol)
+            df, penultimo_close = self.obtener_datos_bollinger(symbol)
             fibonacci_alcista, fibonacci_bajista = self.calcular_fibonacci(df)
             resultado_reversion = self.detectar_retroceso(df, fibonacci_alcista, fibonacci_bajista)
             
@@ -190,7 +195,7 @@ class ForexReversalAnalyzer:
 
     def tiempo_para_proxima_vela(self):
         """Calcula el tiempo restante hasta la próxima vela de 15 minutos."""
-        ahora = datetime.utcnow().replace(tzinfo=pytz.UTC)
+        ahora = datetime.now(timezone.utc)  # Usar timezone-aware UTC object
         proxima_vela = ahora.replace(minute=(ahora.minute // 15) * 15, second=0, microsecond=0) + timedelta(minutes=15)
         return (proxima_vela - ahora).total_seconds()
 

@@ -1,53 +1,25 @@
 {
     "EUR-USD": "No se detectaron patrones",
-    "USD-JPY": {
-        "3m": {
-            "CDLENGULFING": "bajista"
-        }
-    },
+    "USD-JPY": "No se detectaron patrones",
     "GBP-USD": "No se detectaron patrones",
     "AUD-USD": "No se detectaron patrones",
     "USD-CHF": "No se detectaron patrones",
-    "USD-CAD": {
-        "15m": {
-            "CDLHAMMER": "alcista"
-        }
-    },
+    "USD-CAD": "No se detectaron patrones",
     "NZD-USD": "No se detectaron patrones",
     "EUR-JPY": "No se detectaron patrones",
     "GBP-JPY": "No se detectaron patrones",
     "AUD-JPY": "No se detectaron patrones",
-    "NZD-JPY": {
-        "4h": {
-            "CDLHAMMER": "alcista"
-        }
-    },
-    "CAD-JPY": {
-        "3m": {
-            "CDLENGULFING": "bajista"
-        }
-    },
+    "NZD-JPY": "No se detectaron patrones",
+    "CAD-JPY": "No se detectaron patrones",
     "CHF-JPY": "No se detectaron patrones",
     "EUR-GBP": "No se detectaron patrones",
     "EUR-AUD": "No se detectaron patrones",
     "EUR-CAD": "No se detectaron patrones",
     "EUR-NZD": "No se detectaron patrones",
-    "GBP-AUD": {
-        "15m": {
-            "CDLHAMMER": "alcista"
-        }
-    },
+    "GBP-AUD": "No se detectaron patrones",
     "GBP-CAD": "No se detectaron patrones",
-    "GBP-NZD": {
-        "4h": {
-            "CDLMORNINGSTAR": "alcista"
-        }
-    },
-    "USD-ZAR": {
-        "3m": {
-            "CDLENGULFING": "bajista"
-        }
-    },
+    "GBP-NZD": "No se detectaron patrones",
+    "USD-ZAR": "No se detectaron patrones",
     "EUR-TRY": "No se detectaron patrones",
     "USDSGD": "No se detectaron patrones",
     "EURSGD": "No se detectaron patrones",
@@ -56,5 +28,5 @@
     "USDHKD": "No se detectaron patrones",
     "XAU-USD": "No se detectaron patrones",
     "XAG-USD": "No se detectaron patrones",
-    "last_timestamp": "2024-09-30 23:27:36"
+    "last_timestamp": "2024-10-03 23:09:48"
 }
