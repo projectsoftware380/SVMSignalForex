@@ -8,21 +8,30 @@
     "api_key_polygon": "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR",
     "api_token_forexnews": "25wpwpebrawmafmvjuagciubjoylthzaybzvbtqk",
     "loop_interval": 60,
-    "tendencia_interval": 14400,   
-    "reversion_interval": 900,     
-    "senales_interval": 180,       
+    "tendencia_interval": 14400,
+    "reversion_interval": 900,
+    "senales_interval": 180,
     "cierre_interval": 180,
     "pairs": [
-        "EUR-USD", "USD-JPY", "GBP-USD", "AUD-USD", "USD-CHF", "USD-CAD", "NZD-USD", 
-        "EUR-JPY", "GBP-JPY", "AUD-JPY", "NZD-JPY", "CAD-JPY", "CHF-JPY", "EUR-GBP", 
-        "EUR-AUD", "EUR-CAD", "EUR-NZD", "GBP-AUD", "GBP-CAD", "GBP-NZD", 
-        "USD-ZAR", "EUR-TRY", "USDSGD", "EURSGD", 
-        "USDMXN", "USDPLN", "USDHKD", 
-        "XAU-USD", "XAG-USD"
+        "EURUSD", "USDJPY", "GBPUSD", "AUDUSD", "USDCHF", "USDCAD", "NZDUSD",
+        "EURJPY", "GBPJPY", "AUDJPY", "NZDJPY", "CADJPY", "CHFJPY", "EURGBP",
+        "EURAUD", "EURCAD", "EURNZD", "GBPAUD", "GBPCAD", "GBPNZD",
+        "USDZAR", "EURTRY", "USDSGD", "EURSGD",
+        "USDMXN", "USDPLN", "USDHKD",
+        "XAUUSD", "XAGUSD"
     ],
     "usar_sentimiento_mercado": false,
-    "max_loss_level": -1000,  
-    "profit_trailing_level": 2000,  
+    "max_loss_level": -1000,
+    "profit_trailing_level": 2000,
     "trailing_stop_percentage": 30,
-    "monitoreo_intervalo": 10 
+    "monitoreo_intervalo": 10,
+
+    "servidores_a_ejecutar": {
+        "Data_Base_Server": true,
+        "forex_analyzer_server": true,
+        "forex_reversal_server": true,
+        "forex_signal_server": true,
+        "candle_pattern_server": true
+    }
 }
+

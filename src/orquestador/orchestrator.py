@@ -6,8 +6,6 @@ import os
 import json
 from flask import Flask, jsonify
 from threading import Thread, Event
-from datetime import datetime, timedelta
-import pytz
 
 # Ajustar el sys.path para incluir el directorio base del proyecto
 project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -27,10 +25,9 @@ logging.basicConfig(
 
 app = Flask(__name__)
 
-BUFFER_TIME = 30  # Buffer de 30 segundos antes de consultar la nueva vela
 LOG_FILE = os.path.join(log_dir, 'DataBase.log')  # Archivo de log de la base de datos
 
-class SignalOrchestrator:
+class ServerOrchestrator:
     def __init__(self, config, db_sync_event):
         self.config = config
         self.servers = {}
@@ -73,32 +70,9 @@ class SignalOrchestrator:
                     break
                 time.sleep(1)  # Esperar un segundo antes de volver a verificar
 
-    def read_json_file(self, filepath):
-        """Lee un archivo JSON y devuelve su contenido."""
-        try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                data = json.load(f)
-            logging.info(f"Archivo {filepath} leído correctamente.")
-            return data
-        except FileNotFoundError:
-            logging.error(f"Archivo {filepath} no encontrado.")
-            return {}
-        except Exception as e:
-            logging.error(f"Error al leer {filepath}: {e}")
-            return {}
-
-    def write_json_file(self, filepath, data):
-        """Escribe el contenido en un archivo JSON."""
-        try:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
-            logging.info(f"Archivo {filepath} escrito correctamente.")
-        except Exception as e:
-            logging.error(f"Error al escribir {filepath}: {e}")
-
     def start_all_servers(self):
         """Inicia todos los servidores necesarios para el análisis."""
-        logging.info("Esperando a que la base de datos esté completamente actualizada antes de iniciar los servidores de análisis.")
+        logging.info("Esperando a que la base de datos esté completamente actualizada antes de iniciar los servidores.")
         self.db_sync_event.wait()  # Espera a que el evento de sincronización se active
 
         logging.info("Base de datos actualizada. Iniciando servidores de análisis.")
@@ -109,18 +83,6 @@ class SignalOrchestrator:
         self.start_server("Reversion", "python src/services/forex_reversal_server.py")
         self.start_server("Señales", "python src/services/forex_signal_server.py")
         self.start_server("Patrones", "python src/services/candle_pattern_server.py")
-
-    def generate_signals_every_3_minutes(self):
-        """Ejecuta la generación de señales cada 3 minutos."""
-        while True:
-            try:
-                logging.info("Iniciando la generación automática de señales cada 3 minutos.")
-                self.generate_signals()
-                logging.info("Señales generadas y guardadas. Esperando 3 minutos para la próxima ejecución.")
-                time.sleep(180)  # Esperar 3 minutos
-            except Exception as e:
-                logging.error(f"Error en la generación automática de señales: {e}")
-                time.sleep(60)  # Esperar 1 minuto antes de reintentar en caso de error
 
 # Configuración de los servidores
 config = {
@@ -134,13 +96,13 @@ config = {
 db_sync_event = Event()
 
 # Inicializar el orquestador con el evento de sincronización
-orchestrator = SignalOrchestrator(config, db_sync_event)
+orchestrator = ServerOrchestrator(config, db_sync_event)
 
 # Función para iniciar el orquestador de la base de datos en un subproceso
 def start_database_orchestrator():
     try:
         logging.info("Iniciando el orquestador de la base de datos.")
-        # Ejecutar el script Data_Base_Server.py en lugar de database_orchestrator.py
+        # Ejecutar el script Data_Base_Server.py
         subprocess.run("python src/services/Data_Base_Server.py", shell=True)
         logging.info("Orquestador de la base de datos finalizado correctamente.")
     except Exception as e:
@@ -163,20 +125,6 @@ start_log_monitoring_thread()
 
 # Iniciar todos los servidores una vez que la base de datos esté lista
 orchestrator.start_all_servers()
-
-# Iniciar la generación automática de señales cada 3 minutos en un hilo separado
-def start_signal_generation():
-    thread = Thread(target=orchestrator.generate_signals_every_3_minutes)
-    thread.daemon = True
-    thread.start()
-
-start_signal_generation()
-
-@app.route('/generate_signals', methods=['GET'])
-def generate_signals_endpoint():
-    """Endpoint para generar señales bajo demanda."""
-    signals = orchestrator.generate_signals()
-    return jsonify(signals), 200
 
 if __name__ == '__main__':
     # Ejecutar la aplicación Flask en el puerto 5005

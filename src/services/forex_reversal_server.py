@@ -7,6 +7,7 @@ import time
 from flask import Flask, jsonify, request
 from datetime import datetime, timezone, timedelta
 import pytz
+import psycopg2
 
 # Ajustar la ruta del proyecto para que pueda importar los módulos correctamente
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -36,9 +37,9 @@ except Exception as e:
     logging.error(f"Error al cargar el archivo de configuración: {e}")
     raise
 
-# Inicializar el analizador de reversiones
+# Inicializar el analizador de reversiones usando la configuración de la base de datos
 try:
-    forex_reversal_analyzer = ForexReversalAnalyzer(api_key_polygon=config['api_key_polygon'])
+    forex_reversal_analyzer = ForexReversalAnalyzer(db_config=config['db_config'])
     logging.info("ForexReversalAnalyzer inicializado correctamente.")
 except Exception as e:
     logging.error(f"Error al inicializar ForexReversalAnalyzer: {e}")

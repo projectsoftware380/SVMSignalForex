@@ -1,9 +1,9 @@
-import requests
+import psycopg2
 import pandas as pd
 import talib
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 import pytz
 
 # Configuración básica de logging
@@ -14,50 +14,53 @@ logging.basicConfig(
 )
 
 class CandlePatternAnalyzer:
-    def __init__(self, api_key_polygon):
-        self.api_key_polygon = api_key_polygon
+    def __init__(self, db_config):
+        self.db_config = db_config
 
-    def obtener_datos_api(self, symbol, timeframe='minute', multiplier=3, horas=12):
+    def obtener_datos_bd(self, symbol, timeframe):
         """
-        Solicita datos directamente a la API de Polygon.io para el símbolo dado.
-        Se toma la penúltima vela para evitar el análisis de velas en formación.
+        Obtiene los datos desde la base de datos correspondientes al símbolo y la temporalidad.
         """
         try:
-            logging.info(f"Solicitando datos para {symbol} desde la API de Polygon.io")
-            fecha_fin = datetime.now(timezone.utc)  # Reemplazado por timezone-aware UTC object
-            fecha_inicio = fecha_fin - timedelta(hours=horas)
+            # Conectarse a la base de datos
+            connection = psycopg2.connect(**self.db_config)
+            cursor = connection.cursor()
 
-            start_date = fecha_inicio.strftime('%Y-%m-%d')
-            end_date = fecha_fin.strftime('%Y-%m-%d')
-
-            symbol_polygon = symbol.replace("/", "").replace("-", "").upper()
-
-            # URL con sort=desc para obtener los datos más recientes primero
-            url = f"https://api.polygon.io/v2/aggs/ticker/C:{symbol_polygon}/range/{multiplier}/{timeframe}/{start_date}/{end_date}?apiKey={self.api_key_polygon}&sort=desc"
-            response = requests.get(url)
-            response.raise_for_status()
-            data = response.json()
-
-            if 'results' in data:
-                df = pd.DataFrame(data['results'])
-                df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
-                df.set_index('timestamp', inplace=True)
-
-                if df.empty:
-                    logging.warning(f"No se obtuvieron suficientes datos para {symbol}.")
-                    return pd.DataFrame()
-
-                logging.info(f"Datos obtenidos correctamente para {symbol}: {df.shape[0]} filas.")
-                
-                # Retornar los datos, excluyendo la última vela (en formación)
-                return df[['o', 'h', 'l', 'c']].iloc[1:]  # Excluir la primera (más reciente) y trabajar con la penúltima
+            # Seleccionar la tabla en función de la temporalidad
+            if timeframe == '3m':
+                table = 'forex_data_3m'
+            elif timeframe == '15m':
+                table = 'forex_data_15m'
+            elif timeframe == '4h':
+                table = 'forex_data_4h'
             else:
-                logging.warning(f"No se encontraron resultados en la respuesta para {symbol}.")
-                return pd.DataFrame()
+                raise ValueError(f"Temporalidad {timeframe} no válida")
 
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Error al obtener datos de la API para {symbol}: {e}")
+            # Consulta SQL para obtener los datos
+            query = f"""
+            SELECT timestamp, open, high, low, close, volume
+            FROM {table}
+            WHERE pair = %s
+            ORDER BY timestamp DESC
+            LIMIT 100;
+            """
+            cursor.execute(query, (symbol,))
+            rows = cursor.fetchall()
+
+            # Convertir los resultados a DataFrame
+            df = pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df.set_index('timestamp', inplace=True)
+
+            logging.info(f"Datos obtenidos correctamente desde la base de datos para {symbol} en {timeframe}: {df.shape[0]} filas.")
+            return df[['open', 'high', 'low', 'close', 'volume']]
+        except Exception as e:
+            logging.error(f"Error al obtener datos de la base de datos para {symbol} en {timeframe}: {e}")
             return pd.DataFrame()
+        finally:
+            if connection:
+                cursor.close()
+                connection.close()
 
     def detectar_patrones_talib(self, df):
         """
@@ -71,7 +74,7 @@ class CandlePatternAnalyzer:
         try:
             # TA-Lib pattern recognition
             for pattern in talib.get_function_groups()['Pattern Recognition']:
-                result = getattr(talib, pattern)(df['o'], df['h'], df['l'], df['c'])
+                result = getattr(talib, pattern)(df['open'], df['high'], df['low'], df['close'])
 
                 # Penúltimo valor indica el patrón detectado (positivo para alcista, negativo para bajista)
                 if result.iloc[0] > 0 and pattern in patrones_alcistas:
@@ -97,14 +100,10 @@ class CandlePatternAnalyzer:
         patrones_resultantes = {}
 
         # Detección en diferentes temporalidades
-        temporalidades = {
-            '4h': {'timeframe': 'minute', 'multiplier': 240, 'horas': 96},  # 4 horas
-            '15m': {'timeframe': 'minute', 'multiplier': 15, 'horas': 48},  # 15 minutos
-            '3m': {'timeframe': 'minute', 'multiplier': 3, 'horas': 12}     # 3 minutos
-        }
+        temporalidades = ['4h', '15m', '3m']
 
-        for temporalidad, config in temporalidades.items():
-            df = self.obtener_datos_api(symbol, timeframe=config['timeframe'], multiplier=config['multiplier'], horas=config['horas'])
+        for temporalidad in temporalidades:
+            df = self.obtener_datos_bd(symbol, temporalidad)
             if not df.empty:
                 patrones_detectados = self.detectar_patrones_talib(df)
                 if patrones_detectados:

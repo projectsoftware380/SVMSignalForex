@@ -5,14 +5,14 @@ import logging
 import threading
 import time
 from flask import Flask, jsonify
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 
 # Ajustar la ruta de sys.path para asegurar que los módulos correctos sean accesibles
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'CandlePattern')))
 
 # Importar la clase CandlePatternAnalyzer correctamente
-from src.CandlePattern.CandlePatternDetector import CandlePatternAnalyzer
+from CandlePatternDetector import CandlePatternAnalyzer
 
 # Configuración básica de logging
 log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
@@ -33,9 +33,9 @@ with open(CONFIG_FILE, "r") as f:
 # Inicializar Flask
 app = Flask(__name__)
 
-# Inicializar el analizador de patrones de velas con la API key desde config.json
-api_key = config["api_key_polygon"]
-analyzer = CandlePatternAnalyzer(api_key)
+# Inicializar el analizador de patrones de velas con los parámetros de la base de datos desde config.json
+db_config = config["db_config"]
+analyzer = CandlePatternAnalyzer(db_config)
 
 # Definir la ubicación del archivo candle_patterns.json
 CANDLE_PATTERNS_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'candle_patterns.json')
@@ -61,7 +61,7 @@ def guardar_patrones_en_json(patrones):
 
 # Función para calcular el tiempo restante hasta la próxima vela de 3 minutos
 def tiempo_para_proxima_vela():
-    ahora = datetime.now(pytz.UTC)  # Usar datetime.now(pytz.UTC) en lugar de utcnow()
+    ahora = datetime.now(timezone.utc)  # Usar datetime.now con timezone-aware UTC
     proxima_vela = ahora.replace(second=0, microsecond=0, minute=(ahora.minute // 3) * 3) + timedelta(minutes=3)
     return (proxima_vela - ahora).total_seconds()
 
