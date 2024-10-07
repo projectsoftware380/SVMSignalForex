@@ -53,7 +53,7 @@ class DataBaseServer:
     def verificar_estado_mercado(self):
         """Consulta la API de Polygon para determinar si el mercado está abierto."""
         url = "https://api.polygon.io/v1/marketstatus/now"
-        params = {"apiKey": "0E6O_kbTiqLJalWtmJmlGpTztFUFmmFR"}  # Reemplaza con tu API Key
+        params = {"apiKey": config["api_key_polygon"]}  # Reemplaza con tu API Key
         try:
             response = requests.get(url, params=params)
             data = response.json()
@@ -65,12 +65,12 @@ class DataBaseServer:
             logging.error(f"Error al consultar el estado del mercado: {e}")
             return False
 
-    def obtener_ultimo_timestamp(self, conn, pair, timeframe):
+    def obtener_ultimo_timestamp(self, conn, pair, timespan):
         """Obtiene el último timestamp almacenado en la base de datos."""
         cursor = conn.cursor()
         query = f"""
             SELECT MAX(timestamp) 
-            FROM forex_data_{timeframe}  -- Tabla dinámica basada en el timeframe
+            FROM forex_data_{timespan}  -- Tabla dinámica basada en el timespan
             WHERE pair = %s
         """
         cursor.execute(query, (pair,))
@@ -78,12 +78,12 @@ class DataBaseServer:
         cursor.close()
         return ultimo_timestamp
 
-    def obtener_penultimo_timestamp(self, conn, pair, timeframe):
+    def obtener_penultimo_timestamp(self, conn, pair, timespan):
         """Obtiene el penúltimo timestamp almacenado en la base de datos."""
         cursor = conn.cursor()
         query = f"""
             SELECT timestamp 
-            FROM forex_data_{timeframe}  -- Tabla dinámica basada en el timeframe
+            FROM forex_data_{timespan}  -- Tabla dinámica basada en el timespan
             WHERE pair = %s
             ORDER BY timestamp DESC
             LIMIT 2  -- Obtener los dos últimos datos
@@ -96,12 +96,15 @@ class DataBaseServer:
         else:
             return None
 
-    def insertar_datos(self, conn, datos, pair, timeframe):
-        """Inserta los datos obtenidos en la tabla PostgreSQL en bloques y evita duplicados."""
+    def insertar_datos(self, conn, datos, pair, timespan):
+        """Inserta los datos obtenidos en la tabla PostgreSQL en bloques de 5000 registros."""
         cursor = conn.cursor()
 
-        # Determinar la tabla adecuada según el timeframe
-        table_name = f'forex_data_{timeframe}'
+        # Determinar la tabla adecuada según el timespan
+        table_name = f'forex_data_{timespan}'
+
+        batch_size = 5000  # Cambiar el tamaño de los bloques de inserción a 5000
+        count = 0
 
         for result in datos.get("results", []):
             timestamp = result['t']  # Unix timestamp en milisegundos
@@ -119,12 +122,16 @@ class DataBaseServer:
             """
             cursor.execute(query, (timestamp, pair, open_price, close_price, high_price, low_price, volume))
 
-        conn.commit()
+            count += 1
+            if count % batch_size == 0:
+                conn.commit()  # Confirmar cada 5000 inserciones
+
+        conn.commit()  # Confirmar al final cualquier inserción pendiente
         cursor.close()
 
-    def obtener_datos_historicos(self, pairs, timeframe, retention_period_days):
+    def obtener_datos_historicos(self, pairs, timespan, retention_period_days):
         """Obtener datos históricos desde el último timestamp para un solo día."""
-        multiplier, timeframe_api = self.ajustar_timeframe(timeframe)
+        multiplier, timespan_api = self.ajustar_timespan(timespan)
 
         for pair in pairs:
             pair_formatted = pair.replace('-', '')
@@ -133,21 +140,20 @@ class DataBaseServer:
                 logging.error(f"No se pudo conectar a la base de datos para {pair}")
                 continue
 
-            # Solo un día de datos (el actual)
+            # Cambiar el rango de fechas a 5 días de datos
             end_date = datetime.now(timezone.utc)  # Aware datetime
-            start_date = end_date - timedelta(days=retention_period_days)
+            start_date = end_date - timedelta(days=5)  # Rango de 5 días
 
             # Obtener el penúltimo timestamp en la base de datos
-            penultimo_timestamp = self.obtener_penultimo_timestamp(conn, pair, timeframe)
+            penultimo_timestamp = self.obtener_penultimo_timestamp(conn, pair, timespan)
 
             # Convertir 'penultimo_timestamp' a aware datetime si es naive
             if penultimo_timestamp is not None and penultimo_timestamp.tzinfo is None:
-                # Asumimos que el timestamp almacenado está en UTC
                 penultimo_timestamp = penultimo_timestamp.replace(tzinfo=timezone.utc)
 
             # Comparación entre ambos aware datetime
             if penultimo_timestamp and (end_date - penultimo_timestamp).total_seconds() < self.interval:
-                logging.info(f"Datos actualizados para {pair} en timeframe {timeframe}. No se necesita actualización.")
+                logging.info(f"Datos actualizados para {pair} en timespan {timespan}. No se necesita actualización.")
                 conn.close()
                 continue
 
@@ -155,28 +161,29 @@ class DataBaseServer:
             datos = self.historical_fetcher.obtener_datos_polygon(
                 pair_formatted,
                 multiplier=multiplier,
-                timeframe=timeframe_api,
+                timespan=timespan_api,
                 start_date=start_date.strftime('%Y-%m-%d'),
                 end_date=end_date.strftime('%Y-%m-%d')
             )
 
             if datos and 'results' in datos:
-                self.insertar_datos(conn, datos, pair, timeframe)
+                logging.info(f"Cantidad de resultados obtenidos: {len(datos['results'])}")
+                self.insertar_datos(conn, datos, pair, timespan)
             else:
-                logging.warning(f"No se obtuvieron datos para {pair} en timeframe {timeframe_api}.")
+                logging.warning(f"No se obtuvieron datos para {pair} en timespan {timespan_api}.")
 
             conn.close()
 
-    def ajustar_timeframe(self, timeframe):
-        """Ajusta el timeframe y el multiplier para la API de Polygon."""
-        if timeframe == '3m':
+    def ajustar_timespan(self, timespan):
+        """Ajusta el timespan y el multiplier para la API de Polygon."""
+        if timespan == '3m':
             return 3, 'minute'
-        elif timeframe == '15m':
+        elif timespan == '15m':
             return 15, 'minute'
-        elif timeframe == '4h':
+        elif timespan == '4h':
             return 4, 'hour'
         else:
-            logging.error(f"Timeframe {timeframe} no reconocido.")
+            logging.error(f"Timespan {timespan} no reconocido.")
             return None, None
 
     def iniciar_proceso_periodico(self, pairs):
@@ -185,16 +192,15 @@ class DataBaseServer:
         """
         self._running = True
         while not self._stop_event.is_set():
-            # Verificar si el mercado está abierto
             mercado_abierto = self.verificar_estado_mercado()
 
             if mercado_abierto:
                 logging.info("Mercado abierto, iniciando ciclo de actualización de datos históricos.")
 
                 # Consultas para 3M, 15M y 4H
-                self.obtener_datos_historicos(pairs, '3m', retention_period_days=1)  # 3 minutos, retención de 1 día
-                self.obtener_datos_historicos(pairs, '15m', retention_period_days=15)  # 15 minutos, retención de 15 días
-                self.obtener_datos_historicos(pairs, '4h', retention_period_days=180)  # 4 horas, retención de 6 meses
+                self.obtener_datos_historicos(pairs, '3m', retention_period_days=5)
+                self.obtener_datos_historicos(pairs, '15m', retention_period_days=15)
+                self.obtener_datos_historicos(pairs, '4h', retention_period_days=180)
 
                 logging.info("Base de datos actualizada correctamente.")
 
@@ -204,24 +210,17 @@ class DataBaseServer:
 
             else:
                 logging.info("Mercado cerrado. Verificación del estado del mercado en 5 minutos.")
-                # Esperar 5 minutos y volver a verificar si el mercado se ha abierto
                 self._stop_event.wait(self.market_check_interval)
 
         logging.info("Proceso de actualización detenido.")
 
     def iniciar(self, pairs):
-        """
-        Inicia el proceso completo de obtención de datos históricos.
-        Ejecuta la actualización de los datos históricos en un ciclo continuo.
-        """
-        # Iniciar la obtención de datos históricos y eliminación en un hilo separado
+        """Inicia el proceso completo de obtención de datos históricos."""
         self._stop_event.clear()
         threading.Thread(target=self.iniciar_proceso_periodico, args=(pairs,)).start()
 
     def detener(self):
-        """
-        Detiene el ciclo continuo de actualización de datos.
-        """
+        """Detiene el ciclo continuo de actualización de datos."""
         self._stop_event.set()
         self._running = False
         logging.info("Deteniendo el proceso de actualización de datos.")
@@ -230,7 +229,6 @@ class DataBaseServer:
 def iniciar_servidor(db_server):
     global data_base_server
     data_base_server = db_server
-    # Iniciar automáticamente el servidor al arrancar
     data_base_server.iniciar(config.get("pairs"))
     app.run(host='0.0.0.0', port=5005)
 
@@ -244,7 +242,8 @@ if __name__ == '__main__':
 
     # Instancias necesarias
     db_manager = DatabaseManager(db_config)
-    historical_fetcher = HistoricalDataFetcher(api_key=api_key_polygon)
+    db_connection = db_manager.conectar_db()
+    historical_fetcher = HistoricalDataFetcher(api_key=api_key_polygon, db_connection=db_connection)
 
     # Crear el servidor de base de datos con el intervalo de 3 minutos y el evento de sincronización
     data_base_server = DataBaseServer(db_manager, historical_fetcher, db_sync_event, interval=180)

@@ -1,14 +1,15 @@
-import psycopg2
 import pandas as pd
-import pandas_ta as ta
+import psycopg2
+from sqlalchemy import create_engine
+from datetime import datetime, timedelta, timezone
+import pytz
 import threading
 import logging
 import time
 import json
-from datetime import datetime, timedelta
-import pytz
-import os
 import traceback
+import pandas_ta as ta
+import os
 
 # Configurar el logging
 logs_directory = os.path.join(os.path.dirname(__file__), '..', 'logs')
@@ -39,53 +40,38 @@ class ForexSignalAnalyzer:
     def __init__(self, db_config):
         self.db_config = db_config
         self.lock = threading.Lock()
+        
+        # Crear la conexión a la base de datos PostgreSQL
+        self.engine = create_engine(
+            f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}/{db_config['database']}"
+        )
+    
+    def obtener_datos_postgresql(self, pair, start_date, end_date):
+        """
+        Obtiene datos OHLC de la base de datos PostgreSQL para un par de divisas específico.
+        """
+        query = f"""
+        SELECT timestamp, open, high, low, close
+        FROM forex_data_3m
+        WHERE pair = '{pair}'
+        AND timestamp BETWEEN '{start_date}' AND '{end_date}'
+        ORDER BY timestamp DESC;
+        """
+        
+        try:
+            df = pd.read_sql(query, self.engine)
+            df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+            df.set_index('timestamp', inplace=True)
+            return df
+        except Exception as e:
+            logging.error(f"Error al obtener datos para {pair} desde la base de datos: {str(e)}")
+            return pd.DataFrame()
 
     def obtener_hora_colombia(self):
         """Obtiene la hora actual en la zona horaria de Colombia."""
         zona_colombia = pytz.timezone('America/Bogota')
         hora_actual = datetime.now(zona_colombia)
         return hora_actual.strftime('%Y-%m-%d %H:%M:%S')
-
-    def obtener_datos_bd(self, symbol, horas=12):
-        """Obtiene los datos desde la base de datos en lugar de la API."""
-        try:
-            connection = psycopg2.connect(**self.db_config)
-            cursor = connection.cursor()
-
-            query = f"""
-            SELECT timestamp, open, high, low, close, volume
-            FROM forex_data_3m
-            WHERE pair = %s
-            AND timestamp >= NOW() - INTERVAL '{horas} HOURS'
-            ORDER BY timestamp DESC;
-            """
-            cursor.execute(query, (symbol,))
-            rows = cursor.fetchall()
-
-            # Convertir a DataFrame
-            df = pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df.set_index('timestamp', inplace=True)
-
-            if df.empty:
-                logging.warning(f"No se encontraron resultados en la base de datos para {symbol}.")
-                return pd.DataFrame()
-
-            # Convertir las columnas a float para evitar conflictos con tipos de datos
-            df['open'] = df['open'].astype(float)
-            df['high'] = df['high'].astype(float)
-            df['low'] = df['low'].astype(float)
-            df['close'] = df['close'].astype(float)
-
-            logging.info(f"Datos obtenidos correctamente desde la base de datos para {symbol}: {df.shape[0]} filas.")
-            return df[['open', 'high', 'low', 'close', 'volume']]
-        except Exception as e:
-            logging.error(f"Error al obtener datos de la base de datos para {symbol}: {e}")
-            return pd.DataFrame()
-        finally:
-            if connection:
-                cursor.close()
-                connection.close()
 
     def calcular_indicadores(self, df):
         """Calcula el Supertrend."""
@@ -133,7 +119,9 @@ class ForexSignalAnalyzer:
         """Función que maneja el análisis de señales para cada par."""
         try:
             logging.info(f"Analizando señal para {pair}")
-            df = self.obtener_datos_bd(pair)
+            now = datetime.now(timezone.utc)
+            start_date = now - timedelta(hours=12)  # Últimas 12 horas
+            df = self.obtener_datos_postgresql(pair, start_date, now)
             if df.empty:
                 logging.warning(f"No se obtuvieron datos para {pair}.")
                 return None
@@ -164,7 +152,7 @@ class ForexSignalAnalyzer:
 
     def tiempo_para_proxima_vela(self):
         """Calcula el tiempo restante hasta la próxima vela de 3 minutos."""
-        ahora = datetime.utcnow().replace(tzinfo=pytz.UTC)
+        ahora = datetime.now(timezone.utc)
         proxima_vela = ahora.replace(minute=(ahora.minute // 3) * 3, second=0, microsecond=0) + timedelta(minutes=3)
         return (proxima_vela - ahora).total_seconds()
 

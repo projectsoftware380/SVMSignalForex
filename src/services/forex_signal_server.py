@@ -1,209 +1,117 @@
-import psycopg2
-import pandas as pd
-import pandas_ta as ta
-import threading
-import logging
-import time
-import json
-from datetime import datetime, timedelta, timezone
-import pytz
+import argparse
 import os
-import traceback
+import json
+import logging
+import threading
+import time
+from datetime import datetime, timezone
+from flask import Flask, jsonify, request
+import sys
 
-# Configurar el logging
-logs_directory = os.path.join(os.path.dirname(__file__), '..', 'logs')
-if not os.path.exists(logs_directory):
-    os.makedirs(logs_directory)
+# Añadir el directorio 'src' al sys.path para que Python lo encuentre
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
+if src_dir not in sys.path:
+    sys.path.append(src_dir)
 
+from src.senales.ForexSignalAnalyzer import ForexSignalAnalyzer
+
+# Verificar y crear el directorio de logs si no existe
+log_dir = os.path.join(src_dir, 'src', 'logs')
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+# Configurar logging para guardar en 'src/logs/forex_signal_server.log'
+log_file = os.path.join(log_dir, 'forex_signal_server.log')
 logging.basicConfig(
-    filename=os.path.join(logs_directory, 'signal_server.log'),
-    level=logging.DEBUG,  
+    filename=log_file,
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
 
-# Cargar configuración desde config.json
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.json')
+# Instanciar Flask
+app = Flask(__name__)
 
-try:
-    with open(CONFIG_FILE, "r", encoding='utf-8') as f:
-        config = json.load(f)
-        logging.info("Archivo de configuración cargado correctamente.")
-except Exception as e:
-    logging.error(f"Error al cargar el archivo de configuración: {e}")
-    raise
+# Ruta del archivo JSON que almacenará las señales
+SIGNALS_FILE = os.path.join(src_dir, 'src', 'data', 'signals.json')
 
-# Definir la ubicación del archivo signals.json
-SIGNALS_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'signals.json')
+# Cargar configuración desde config.json (que contiene los pares y la configuración de la base de datos)
+CONFIG_FILE = os.path.join(src_dir, 'src', 'config', 'config.json')
+with open(CONFIG_FILE, "r") as f:
+    config = json.load(f)
 
-class ForexSignalAnalyzer:
-    def __init__(self, db_config):
-        self.db_config = db_config
-        self.lock = threading.Lock()
+# Instanciar ForexSignalAnalyzer con la configuración de la base de datos
+forex_signal_analyzer = ForexSignalAnalyzer(db_config=config["db_config"])
 
-    def obtener_hora_colombia(self):
-        """Obtiene la hora actual en la zona horaria de Colombia."""
-        zona_colombia = pytz.timezone('America/Bogota')
-        hora_actual = datetime.now(zona_colombia)
-        return hora_actual.strftime('%Y-%m-%d %H:%M:%S')
+def guardar_senales(senales):
+    """Guarda las señales en el archivo JSON, incluyendo el timestamp de la última actualización."""
+    with forex_signal_analyzer.lock:
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        senales['last_update'] = timestamp  # Registrar el timestamp de la última actualización
 
-    def obtener_datos_bd(self, symbol, horas=12):
-        """Obtiene los datos desde la base de datos en lugar de la API."""
-        try:
-            connection = psycopg2.connect(**self.db_config)
-            cursor = connection.cursor()
+        with open(SIGNALS_FILE, 'w') as f:
+            json.dump(senales, f, indent=4)
+        logger.info(f"Señales guardadas en el archivo JSON con timestamp {timestamp}.")
 
-            query = """
-            SELECT timestamp, open, high, low, close, volume
-            FROM forex_data_3m
-            WHERE pair = %s
-            AND timestamp >= NOW() - INTERVAL %s
-            ORDER BY timestamp DESC;
-            """
-            cursor.execute(query, (symbol, f'{horas} HOURS'))
-            rows = cursor.fetchall()
+@app.route('/analyze', methods=['GET'])
+def analyze_pair():
+    """
+    Endpoint para analizar manualmente y guardar las señales en el archivo JSON.
+    """
+    try:
+        senales = forex_signal_analyzer.analizar_senales()
+        guardar_senales(senales)
+        return jsonify({"status": "success", "message": "Análisis completado y señales guardadas."})
+    except Exception as e:
+        logger.error(f"Error en el análisis manual: {str(e)}")
+        return jsonify({"error": "Ocurrió un error durante el análisis."}), 500
 
-            # Convertir a DataFrame
-            df = pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df.set_index('timestamp', inplace=True)
+@app.route('/signals', methods=['GET'])
+def obtener_senales():
+    """
+    Endpoint para obtener todas las señales almacenadas en el archivo JSON.
+    """
+    try:
+        # Verificar si el archivo de señales existe
+        with forex_signal_analyzer.lock:
+            if not os.path.exists(SIGNALS_FILE):
+                return jsonify({"error": "No se ha encontrado el archivo de señales."}), 404
 
-            if df.empty:
-                logging.warning(f"No se encontraron resultados en la base de datos para {symbol}.")
-                return pd.DataFrame()
+            # Leer y devolver las señales almacenadas en el archivo JSON
+            with open(SIGNALS_FILE, 'r') as f:
+                senales = json.load(f)
 
-            # Convertir las columnas a float para evitar conflictos con tipos de datos
-            df['open'] = df['open'].astype(float)
-            df['high'] = df['high'].astype(float)
-            df['low'] = df['low'].astype(float)
-            df['close'] = df['close'].astype(float)
+        return jsonify(senales)
 
-            logging.info(f"Datos obtenidos correctamente desde la base de datos para {symbol}: {df.shape[0]} filas.")
-            return df[['open', 'high', 'low', 'close', 'volume']]
-        except Exception as e:
-            logging.error(f"Error al obtener datos de la base de datos para {symbol}: {e}")
-            return pd.DataFrame()
-        finally:
-            if connection:
-                cursor.close()
-                connection.close()
+    except Exception as e:
+        logger.error(f"Error al obtener las señales: {str(e)}")
+        return jsonify({"error": "Ocurrió un error al procesar la solicitud"}), 500
 
-    def calcular_indicadores(self, df):
-        """Calcula el Supertrend."""
-        try:
-            if df.empty:
-                raise ValueError("El DataFrame está vacío, no se pueden calcular los indicadores.")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Forex Signal Server')
+    parser.add_argument('--port', type=int, default=5000, help='Puerto para el servidor Flask')
+    args = parser.parse_args()
 
-            logging.info(f"Calculando Supertrend para los datos proporcionados.")
-            supertrend_df = ta.supertrend(df['high'], df['low'], df['close'], length=14, multiplier=3)
-            df['Supertrend'] = supertrend_df['SUPERT_14_3.0']
-            logging.debug(f"Supertrend calculado exitosamente.")
-            return df
-        except Exception as e:
-            logging.error(f"Error al calcular indicadores: {e}")
-            logging.error(traceback.format_exc())
-            return df
-
-    def generar_senal_trading(self, df):
-        """Genera señales de trading basadas en el Supertrend."""
-        try:
-            if df.empty or 'Supertrend' not in df.columns:
-                raise ValueError("Datos insuficientes o falta la columna 'Supertrend'.")
-
-            close = df['close'].iloc[-1]
-            supertrend = df['Supertrend'].iloc[-1]
-
-            logging.info(f"Valores de Indicadores - Close: {close}, Supertrend: {supertrend}")
-
-            if close > supertrend:
-                logging.info(f"Señal de Compra detectada en {df.index[-1]}")
-                return "Señal de Compra"
-
-            elif close < supertrend:
-                logging.info(f"Señal de Venta detectada en {df.index[-1]}")
-                return "Señal de Venta"
-
-            logging.info(f"No se detectó señal en {df.index[-1]}.")
-            return None
-        except Exception as e:
-            logging.error(f"Error al generar la señal de trading: {e}")
-            logging.error(traceback.format_exc())
-            return None
-
-    def analizar_senal_para_par(self, pair):
-        """Función que maneja el análisis de señales para cada par."""
-        try:
-            logging.info(f"Analizando señal para {pair}")
-            df = self.obtener_datos_bd(pair)
-            if df.empty:
-                logging.warning(f"No se obtuvieron datos para {pair}.")
-                return None
-
-            df = self.calcular_indicadores(df)
-            return self.generar_senal_trading(df)
-        except ValueError as e:
-            logging.error(f"Error en el análisis de señales para {pair}: {str(e)}")
-            logging.error(traceback.format_exc())
-        except Exception as e:
-            logging.error(f"Error inesperado al analizar la señal para {pair}: {str(e)}")
-            logging.error(traceback.format_exc())
-        return None
-
-    def analizar_senales(self):
-        """Analiza todas las señales para los pares de divisas en config.json."""
-        pares_a_analizar = config['pairs']
-        resultados = {}
-
-        logging.info(f"Analizando señales para los pares: {pares_a_analizar}")
-
-        for pair in pares_a_analizar:
-            senal = self.analizar_senal_para_par(pair)
-            if senal:
-                resultados[pair] = senal
-
-        return resultados
-
-    def tiempo_para_proxima_vela(self):
-        """Calcula el tiempo restante hasta la próxima vela de 3 minutos."""
-        ahora = datetime.now(timezone.utc)
-        proxima_vela = ahora.replace(minute=(ahora.minute // 3) * 3, second=0, microsecond=0) + timedelta(minutes=3)
-        return (proxima_vela - ahora).total_seconds()
-
-    def ejecutar_analisis_cuando_nueva_vela(self):
-        """Ejecuta el análisis de señales sincronizado con la creación de nuevas velas de 3 minutos."""
+    # Sincronizar el cálculo de señales con la aparición de nuevas velas de 3 minutos
+    def run_sincronizar():
         while True:
-            # Calcular el tiempo hasta la próxima vela de 3 minutos
-            tiempo_restante = self.tiempo_para_proxima_vela()
-            logging.info(f"Esperando {tiempo_restante} segundos para la próxima vela de 3 minutos.")
-            time.sleep(tiempo_restante)  # Esperar hasta la nueva vela
-            logging.info("Iniciando análisis de señales con nueva vela de 3 minutos.")
-            
-            # Ejecutar el análisis de señales
-            senales = self.analizar_senales()
+            try:
+                # Realizar un análisis inmediato al iniciar
+                senales = forex_signal_analyzer.analizar_senales()
+                guardar_senales(senales)
+                logger.info("Análisis y guardado de señales completado al iniciar.")
 
-            # Guardar las señales en el archivo JSON
-            self.guardar_senales_en_json(senales)
-            logging.info("Análisis de señales completado y guardado.")
+                tiempo_restante = 3 * 60  # Esperar 3 minutos para la próxima vela
+                logger.info(f"Esperando {tiempo_restante} segundos para la próxima vela.")
+                time.sleep(tiempo_restante)
+            except Exception as e:
+                logger.error(f"Error en sincronizar_con_nueva_vela: {str(e)}")
+                time.sleep(60)  # Esperar antes de reintentar
 
-    def guardar_senales_en_json(self, senales):
-        """Guarda las señales generadas en el archivo JSON, incluyendo la fecha y hora de Colombia."""
-        try:
-            timestamp_colombia = self.obtener_hora_colombia()  # Obtener la hora en Colombia
-            senales['last_timestamp'] = timestamp_colombia  # Agregar la hora al archivo JSON
+    hilo_senales = threading.Thread(target=run_sincronizar)
+    hilo_senales.daemon = True
+    hilo_senales.start()
 
-            with open(SIGNALS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(senales, f, indent=4, ensure_ascii=False)
-            logging.info(f"Señales guardadas en {SIGNALS_FILE} con timestamp {timestamp_colombia}.")
-        except Exception as e:
-            logging.error(f"Error al guardar las señales en {SIGNALS_FILE}: {e}")
-
-# Crear un hilo para ejecutar el análisis sincronizado con la creación de nuevas velas de 3 minutos
-def iniciar_hilo_analisis():
-    signal_analyzer = ForexSignalAnalyzer(db_config=config['db_config'])
-    hilo_analisis = threading.Thread(target=signal_analyzer.ejecutar_analisis_cuando_nueva_vela)
-    hilo_analisis.daemon = True  # Hilo como demonio
-    hilo_analisis.start()
-
-if __name__ == "__main__":
-    iniciar_hilo_analisis()
-    while True:
-        time.sleep(1)  # Mantener el script corriendo
+    # Iniciar el servidor Flask en el puerto especificado
+    app.run(host='0.0.0.0', port=args.port, debug=False)

@@ -4,7 +4,7 @@ import logging
 import sys
 import os
 import json
-from flask import Flask, jsonify
+from flask import Flask
 from threading import Thread, Event
 
 # Ajustar el sys.path para incluir el directorio base del proyecto
@@ -76,20 +76,24 @@ class ServerOrchestrator:
         self.db_sync_event.wait()  # Espera a que el evento de sincronización se active
 
         logging.info("Base de datos actualizada. Iniciando servidores de análisis.")
-        # Iniciar el servidor de tendencias
+        # Iniciar los servidores en el orden especificado
+        self.start_server("Data Base Server", "python src/services/Data_Base_Server.py")
+        self.start_server("Orchestrator", "python src/services/orchestrator.py")
         self.start_server("Tendencia", "python src/services/forex_analyzer_server.py")
-
-        # Iniciar el resto de los servidores
         self.start_server("Reversion", "python src/services/forex_reversal_server.py")
+        # Iniciar el nuevo servidor de señales correcto
         self.start_server("Señales", "python src/services/forex_signal_server.py")
         self.start_server("Patrones", "python src/services/candle_pattern_server.py")
+        self.start_server("Servidor de Señales", "python src/services/TradingSignalServer.py")
+
 
 # Configuración de los servidores
 config = {
     'tendencia_server': 'localhost:5001',
     'reversion_server': 'localhost:5002',
     'senal_server': 'localhost:5003',
-    'patrones_server': 'localhost:5004'
+    'patrones_server': 'localhost:5004',
+    'trading_signal_server': 'localhost:5007'
 }
 
 # Crear el evento de sincronización
@@ -120,6 +124,7 @@ def start_log_monitoring_thread():
     log_thread.daemon = True
     log_thread.start()
 
+# Iniciar los hilos para la base de datos y monitoreo de log
 start_database_thread()
 start_log_monitoring_thread()
 

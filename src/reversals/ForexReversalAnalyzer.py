@@ -58,6 +58,8 @@ class ForexReversalAnalyzer:
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             df.set_index('timestamp', inplace=True)
 
+            logging.info(f"Datos obtenidos para {symbol}. Número de filas: {len(df)}")
+
             if df.empty:
                 logging.warning(f"No se encontraron resultados en la base de datos para {symbol}.")
                 return pd.DataFrame(), pd.DataFrame()
@@ -103,6 +105,10 @@ class ForexReversalAnalyzer:
     def obtener_datos_bollinger(self, symbol):
         """Obtiene y calcula las Bandas de Bollinger para el símbolo."""
         df, penultimo_close = self.obtener_datos_bd(symbol)
+
+        # Loguear las primeras filas para validación
+        logging.info(f"Primeras 5 filas de datos obtenidos para {symbol}:\n{df.head()}")
+
         if df.empty:
             raise ValueError(f"Los datos obtenidos para {symbol} no son suficientes o están vacíos.")
 
@@ -111,9 +117,14 @@ class ForexReversalAnalyzer:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         df = df.dropna()
 
-        if len(df) < 1:
-            raise ValueError(f"No hay suficientes datos para calcular las Bandas de Bollinger para {symbol}.")
+        # Loguear la longitud después del procesamiento
+        logging.info(f"Filas restantes después de limpiar datos para {symbol}: {len(df)}")
 
+        if len(df) < 20:
+            logging.error(f"Datos insuficientes para calcular las Bandas de Bollinger para {symbol}")
+            return pd.DataFrame(), penultimo_close
+
+        # Calcular las Bandas de Bollinger
         bollinger = ta.bbands(df['close'], length=20, std=2)
         df['mid'] = bollinger['BBM_20_2.0']  # Banda central
         df['upper'] = bollinger['BBU_20_2.0']

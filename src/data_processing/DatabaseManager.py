@@ -2,6 +2,7 @@ import psycopg2
 import logging
 import os
 import time
+from datetime import datetime, timezone
 
 # Configuración del logger directamente en el archivo
 log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
@@ -57,7 +58,7 @@ class DatabaseManager:
             return
 
         cursor = conn.cursor()
-        batch_size = 100
+        batch_size = 100  # Tamaño del batch para hacer commits cada 100 inserciones
         count = 0
 
         # Asignar la tabla según el timeframe
@@ -80,27 +81,28 @@ class DatabaseManager:
                 low_price = result['l']
                 volume = result['v']
 
+                # Verificación adicional para asegurar que los datos no son duplicados
                 query = f"""
-                INSERT INTO {table_name} (timestamp, pair, timeframe, open, close, high, low, volume)
-                VALUES (to_timestamp(%s / 1000.0), %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT DO NOTHING
+                INSERT INTO {table_name} (timestamp, pair, open, close, high, low, volume)
+                VALUES (to_timestamp(%s / 1000.0), %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (timestamp, pair) DO NOTHING
                 """
-                cursor.execute(query, (timestamp, pair, timeframe, open_price, close_price, high_price, low_price, volume))
+                cursor.execute(query, (timestamp, pair, open_price, close_price, high_price, low_price, volume))
 
                 count += 1
                 if count % batch_size == 0:
-                    conn.commit()
+                    conn.commit()  # Hacer commit después de cada batch
 
             conn.commit()  # Último commit al final del procesamiento
             logging.info(f"Datos insertados para {pair} en timeframe {timeframe} en la tabla {table_name}.")
 
             # Verificar si el último timestamp insertado coincide con los datos más recientes
             ultimo_timestamp = self.verificar_timestamp(conn, pair, timeframe)
-            if ultimo_timestamp != datetime.utcfromtimestamp(result['t'] / 1000.0):
-                logging.warning(f"El timestamp más reciente en la base de datos para {pair} no coincide con el último dato insertado.")
+            logging.info(f"El último timestamp insertado para {pair} en {timeframe} es {ultimo_timestamp}")
 
         except Exception as e:
             logging.error(f"Error al insertar datos para {pair}: {e}")
+            conn.rollback()  # Hacer rollback en caso de error
         finally:
             cursor.close()
 
@@ -133,6 +135,7 @@ class DatabaseManager:
             logging.info(f"Datos antiguos eliminados para la tabla {table_name} con retención de {retention_period}.")
         except Exception as e:
             logging.error(f"Error al eliminar datos antiguos: {e}")
+            conn.rollback()
         finally:
             cursor.close()
             conn.close()
@@ -160,3 +163,4 @@ class DatabaseManager:
 
         except Exception as e:
             logging.error(f"Error al monitorear la inserción de datos: {e}")
+
