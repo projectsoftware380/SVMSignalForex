@@ -1,27 +1,30 @@
 import argparse
 import os
-import json
 import logging
+import json
+from flask import Flask, jsonify, request
+from datetime import datetime, timezone
+import pytz  # Para obtener la hora en Colombia
 import threading
 import time
-from datetime import datetime, timezone
-from flask import Flask, jsonify, request
 import sys
 
-# Añadir el directorio 'src' al sys.path para que Python lo encuentre
-current_dir = os.path.dirname(os.path.abspath(__file__))
-src_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
-if src_dir not in sys.path:
-    sys.path.append(src_dir)
+# Agregar la ruta al sistema para buscar los módulos en la estructura de carpetas.
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from src.tendencias.ForexAnalyzer import ForexAnalyzer
+# Importar la clase ForexAnalyzer desde su ubicación correcta
+try:
+    from src.tendencias.ForexAnalyzer import ForexAnalyzer
+except ImportError as e:
+    print(f"Error importando ForexAnalyzer: {e}")
+    sys.exit(1)
 
-# Verificar y crear el directorio de logs si no existe
-log_dir = os.path.join(src_dir, 'src', 'logs')
+# Configurar un logger específico para este servidor y guardarlo en `src/logs`
+log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs'))
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
-# Configurar logging para guardar en 'src/logs/forex_analyzer_server.log'
+# Configurar logging
 log_file = os.path.join(log_dir, 'forex_analyzer_server.log')
 logging.basicConfig(
     filename=log_file,
@@ -30,19 +33,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Instanciar Flask
-app = Flask(__name__)
+# Ruta relativa para el archivo de configuración config.json
+CONFIG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config', 'config.json'))
 
-# Ruta del archivo JSON que almacenará las tendencias
-TENDENCIAS_FILE = os.path.join(src_dir, 'src', 'data', 'tendencias.json')
+# Cargar configuración desde config.json
+if not os.path.exists(CONFIG_FILE):
+    logger.error(f"El archivo de configuración {CONFIG_FILE} no fue encontrado.")
+    raise FileNotFoundError(f"El archivo de configuración {CONFIG_FILE} no fue encontrado.")
 
-# Cargar configuración desde config.json (que contiene los pares y la configuración de la base de datos)
-CONFIG_FILE = os.path.join(src_dir, 'src', 'config', 'config.json')
 with open(CONFIG_FILE, "r") as f:
     config = json.load(f)
 
 # Instanciar ForexAnalyzer con la configuración de la base de datos y los pares
-forex_analyzer = ForexAnalyzer(db_config=config["db_config"], pairs=config["pairs"])
+db_config = config["db_config"]
+pairs = config["pairs"]
+
+# Instanciar ForexAnalyzer
+forex_analyzer = ForexAnalyzer(db_config=db_config, pairs=pairs)
+
+# Instanciar Flask
+app = Flask(__name__)
+
+# Ruta del archivo JSON que almacenará las tendencias en `src/data/tendencias.json`
+TENDENCIAS_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'tendencias.json'))
+
+def obtener_hora_colombia():
+    """Obtiene la hora actual en la zona horaria de Colombia."""
+    zona_colombia = pytz.timezone('America/Bogota')
+    hora_actual_colombia = datetime.now(zona_colombia)
+    return hora_actual_colombia.strftime('%Y-%m-%d %H:%M:%S')
 
 def guardar_tendencias(tendencias):
     """Guarda las tendencias en el archivo JSON."""
@@ -64,6 +83,9 @@ def analyze_pair():
         # Analizar el par utilizando ForexAnalyzer
         tendencia = forex_analyzer.analizar_par(pair)
 
+        # Obtener el timestamp actual en hora colombiana
+        timestamp = obtener_hora_colombia()
+
         # Leer tendencias existentes o inicializar si el archivo no existe
         with forex_analyzer.lock:
             if os.path.exists(TENDENCIAS_FILE):
@@ -72,16 +94,23 @@ def analyze_pair():
             else:
                 tendencias = {}
 
-            # Actualizar la tendencia del par analizado
-            tendencias[pair] = tendencia
+            # Normalizar la tendencia y el par antes de guardarlos
+            tendencia = forex_analyzer.normalizar_string(tendencia)
+            par_normalizado = forex_analyzer.normalizar_string(pair)
+
+            # Actualizar la tendencia y el timestamp del par analizado
+            tendencias[par_normalizado] = {
+                "tendencia": tendencia,
+                "timestamp": timestamp
+            }
 
             # Guardar las tendencias actualizadas en el archivo JSON
             guardar_tendencias(tendencias)
 
-        logger.info(f"Tendencia guardada en JSON: {pair} -> {tendencia}")
+        logger.info(f"Tendencia guardada en JSON: {pair} -> {tendencia} at {timestamp}")
 
-        # Devolver la tendencia como respuesta
-        return jsonify({pair: tendencia})
+        # Devolver la tendencia y el timestamp como respuesta
+        return jsonify({par_normalizado: tendencias[par_normalizado]})
 
     except Exception as e:
         logger.error(f"Error al analizar el par: {str(e)}")
@@ -99,7 +128,18 @@ def analyze_all_pairs():
             return jsonify({"error": "No se encontraron pares en el archivo de configuración"}), 400
 
         # Analizar todos los pares
-        tendencias_calculadas = forex_analyzer.analizar_pares()
+        tendencias_calculadas = {}
+        for pair in pares:
+            tendencia = forex_analyzer.analizar_par(pair)
+            timestamp = obtener_hora_colombia()
+            tendencia = forex_analyzer.normalizar_string(tendencia)
+            par_normalizado = forex_analyzer.normalizar_string(pair)
+
+            tendencias_calculadas[par_normalizado] = {
+                "tendencia": tendencia,
+                "timestamp": timestamp
+            }
+            logger.info(f"Tendencia calculada: {par_normalizado} -> {tendencia} at {timestamp}")
 
         # Guardar todas las tendencias en el archivo JSON
         guardar_tendencias(tendencias_calculadas)
@@ -143,14 +183,29 @@ if __name__ == '__main__':
     def run_sincronizar():
         while True:
             try:
-                # Realizar un análisis inmediato al iniciar
-                forex_analyzer.analizar_pares()
-                guardar_tendencias(forex_analyzer.last_trend)
-                logger.info("Análisis y guardado de tendencias completado al iniciar.")
+                # Analizar todos los pares y guardar las tendencias con timestamp
+                tendencias_calculadas = {}
+                for pair in config["pairs"]:
+                    tendencia = forex_analyzer.analizar_par(pair)
+                    timestamp = obtener_hora_colombia()
+                    tendencia = forex_analyzer.normalizar_string(tendencia)
+                    par_normalizado = forex_analyzer.normalizar_string(pair)
 
-                tiempo_restante = 4 * 3600  # Esperar 4 horas
-                logger.info(f"Esperando {tiempo_restante} segundos para la próxima vela.")
-                time.sleep(tiempo_restante)
+                    tendencias_calculadas[par_normalizado] = {
+                        "tendencia": tendencia,
+                        "timestamp": timestamp
+                    }
+                    logger.info(f"Tendencia calculada: {par_normalizado} -> {tendencia} at {timestamp}")
+
+                guardar_tendencias(tendencias_calculadas)
+                logger.info("Análisis y guardado de tendencias completado.")
+
+                # Esperar hasta la próxima vela de 4 horas
+                tiempo_actual = datetime.now(timezone.utc)
+                minutos_para_proxima_4h = (240 - ((tiempo_actual.hour % 4) * 60 + tiempo_actual.minute)) % 240
+                segundos_para_proxima_4h = minutos_para_proxima_4h * 60 - tiempo_actual.second
+                logger.info(f"Esperando {segundos_para_proxima_4h} segundos para la próxima vela de 4 horas.")
+                time.sleep(segundos_para_proxima_4h)
             except Exception as e:
                 logger.error(f"Error en sincronizar_con_nueva_vela: {str(e)}")
                 time.sleep(60)  # Esperar antes de reintentar

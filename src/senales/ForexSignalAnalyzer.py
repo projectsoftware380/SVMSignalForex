@@ -1,197 +1,183 @@
-import pandas as pd
 import psycopg2
-from sqlalchemy import create_engine
-from datetime import datetime, timedelta, timezone
-import pytz
-import threading
-import logging
-import time
-import json
-import traceback
+import pandas as pd
 import pandas_ta as ta
+from datetime import datetime, timezone
+import pytz  # Para obtener la hora en Colombia
+import logging
+import threading
+import time
 import os
+import json
+import unicodedata
 
-# Configurar el logging
-logs_directory = os.path.join(os.path.dirname(__file__), '..', 'logs')
-if not os.path.exists(logs_directory):
-    os.makedirs(logs_directory)
-
-logging.basicConfig(
-    filename=os.path.join(logs_directory, 'signal_server.log'),
-    level=logging.DEBUG,  
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-
-# Cargar configuración desde config.json
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.json')
-
-try:
-    with open(CONFIG_FILE, "r", encoding='utf-8') as f:
-        config = json.load(f)
-        logging.info("Archivo de configuración cargado correctamente.")
-except Exception as e:
-    logging.error(f"Error al cargar el archivo de configuración: {e}")
-    raise
-
-# Definir la ubicación del archivo signals.json
-SIGNALS_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'signals.json')
+# Configuración del logger
+logger = logging.getLogger(__name__)
 
 class ForexSignalAnalyzer:
     def __init__(self, db_config):
         self.db_config = db_config
         self.lock = threading.Lock()
-        
-        # Crear la conexión a la base de datos PostgreSQL
-        self.engine = create_engine(
-            f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}/{db_config['database']}"
-        )
-    
-    def obtener_datos_postgresql(self, pair, start_date, end_date):
-        """
-        Obtiene datos OHLC de la base de datos PostgreSQL para un par de divisas específico.
-        """
-        query = f"""
-        SELECT timestamp, open, high, low, close
-        FROM forex_data_3m
-        WHERE pair = '{pair}'
-        AND timestamp BETWEEN '{start_date}' AND '{end_date}'
-        ORDER BY timestamp DESC;
-        """
-        
+        # Ruta al archivo JSON donde se guardarán las señales
+        self.SIGNALS_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'signals.json')
+        # Cargar configuración desde config.json
+        CONFIG_FILE = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.json')
+        with open(CONFIG_FILE, "r", encoding='utf-8') as f:
+            self.config = json.load(f)
+        self.pairs = self.config.get("pairs", [])
+
+    def normalizar_string(self, valor):
+        """Normaliza una cadena de texto eliminando caracteres especiales."""
+        if isinstance(valor, str):
+            return unicodedata.normalize('NFKD', valor).encode('ascii', 'ignore').decode('ascii')
+        return valor
+
+    def obtener_datos_bd(self, symbol, registros=150):
+        """Obtiene los datos más recientes de la base de datos y los prepara para el análisis."""
         try:
-            df = pd.read_sql(query, self.engine)
-            df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+            logger.info(f"Obteniendo datos para {symbol}.")
+            connection = psycopg2.connect(**self.db_config)
+            cursor = connection.cursor()
+
+            # Consulta SQL para obtener los registros más recientes
+            query = """
+            SELECT timestamp, open, high, low, close, volume
+            FROM forex_data_3m
+            WHERE pair = %s
+            ORDER BY timestamp DESC
+            LIMIT %s;
+            """
+            cursor.execute(query, (symbol, registros))
+            rows = cursor.fetchall()
+
+            # Convertir a DataFrame
+            df = pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
             df.set_index('timestamp', inplace=True)
+
+            # Ordenar el DataFrame en orden ascendente
+            df = df.sort_index()
+
+            logger.info(f"Datos obtenidos para {symbol}. Número de filas: {len(df)}")
+            logger.debug(f"Datos iniciales:\n{df.head()}")
+
+            if df.empty:
+                logger.warning(f"No se encontraron resultados en la base de datos para {symbol}.")
+                return pd.DataFrame()
+
+            # Eliminar duplicados en los timestamps
+            df = df[~df.index.duplicated(keep='first')]
+
+            # Convertir los valores a float para asegurar compatibilidad con pandas_ta
+            cols_to_convert = ['open', 'high', 'low', 'close', 'volume']
+            df[cols_to_convert] = df[cols_to_convert].apply(pd.to_numeric, errors='coerce')
+
+            # Eliminar filas con valores NaN
+            df.dropna(subset=cols_to_convert, inplace=True)
+
+            # Reindexar el DataFrame para asegurar timestamps uniformes cada 3 minutos
+            df = df.asfreq('3min')
+
+            # Interpolar los valores faltantes
+            df[cols_to_convert] = df[cols_to_convert].interpolate(method='time')
+
+            # Eliminar filas con valores NaN restantes después de la interpolación
+            df.dropna(subset=cols_to_convert, inplace=True)
+
+            # Verificar que el DataFrame tiene suficientes filas
+            if len(df) < 22:
+                logger.error(f"Datos insuficientes para {symbol}. Se requieren al menos 22 registros.")
+                return pd.DataFrame()
+
+            logger.debug(f"Datos procesados para {symbol}:\n{df.tail()}")
             return df
         except Exception as e:
-            logging.error(f"Error al obtener datos para {pair} desde la base de datos: {str(e)}")
+            logger.error(f"Error al obtener datos de la base de datos para {symbol}: {e}", exc_info=True)
             return pd.DataFrame()
+        finally:
+            if 'connection' in locals() and connection:
+                cursor.close()
+                connection.close()
+
+    def analizar_senales(self):
+        """Analiza señales para todos los pares y guarda los resultados en un archivo JSON."""
+        resultados = {}
+
+        logger.info(f"Analizando señales para los pares: {self.pairs}")
+
+        for symbol in self.pairs:
+            resultado = self.analizar_senal_para_par(symbol)
+            if resultado is not None:
+                resultados[symbol] = self.normalizar_string(resultado)
+
+        # Guardar resultados en archivo JSON
+        with self.lock:
+            timestamp_colombia = self.obtener_hora_colombia()
+            resultados['last_update'] = self.normalizar_string(timestamp_colombia)
+            with open(self.SIGNALS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(resultados, f, indent=4)
+            logger.info(f"Señales guardadas en {self.SIGNALS_FILE} con timestamp {timestamp_colombia}.")
+
+        return resultados
+
+    def analizar_senal_para_par(self, symbol):
+        """Analiza señal para un par específico usando Supertrend."""
+        logger.info(f"Analizando señal para {symbol}")
+        df = self.obtener_datos_bd(symbol)
+        if df.empty:
+            logger.error(f"No se pudieron obtener datos para {symbol}.")
+            return None
+
+        # Implementar la lógica de análisis de señales con Supertrend
+        signal = self.generar_senal(df)
+        return signal
+
+    def generar_senal(self, df):
+        """Genera una señal basada en el indicador Supertrend."""
+        try:
+            # Calcular Supertrend
+            logger.info("Calculando el indicador Supertrend.")
+            supertrend = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
+            df = df.join(supertrend)
+
+            logger.debug(f"Supertrend calculado:\n{df[['SUPERT_10_3.0', 'SUPERTd_10_3.0']].tail()}")
+
+            # Detectar señal de compra o venta basándose en Supertrend
+            if df['SUPERTd_10_3.0'].iloc[-2] == -1 and df['SUPERTd_10_3.0'].iloc[-1] == 1:
+                logger.info("Señal de Compra detectada con Supertrend.")
+                return "Señal de Compra"
+            elif df['SUPERTd_10_3.0'].iloc[-2] == 1 and df['SUPERTd_10_3.0'].iloc[-1] == -1:
+                logger.info("Señal de Venta detectada con Supertrend.")
+                return "Señal de Venta"
+            else:
+                logger.info("No se detectó señal (Supertrend).")
+                return "Sin Señal"
+        except Exception as e:
+            logger.error(f"Error al generar señal con Supertrend: {e}", exc_info=True)
+            return None
 
     def obtener_hora_colombia(self):
         """Obtiene la hora actual en la zona horaria de Colombia."""
         zona_colombia = pytz.timezone('America/Bogota')
-        hora_actual = datetime.now(zona_colombia)
-        return hora_actual.strftime('%Y-%m-%d %H:%M:%S')
-
-    def calcular_indicadores(self, df):
-        """Calcula el Supertrend."""
-        try:
-            if df.empty:
-                raise ValueError("El DataFrame está vacío, no se pueden calcular los indicadores.")
-
-            logging.info(f"Calculando Supertrend para los datos proporcionados.")
-            supertrend_df = ta.supertrend(df['high'], df['low'], df['close'], length=14, multiplier=3)
-            df['Supertrend'] = supertrend_df['SUPERT_14_3.0']
-            logging.debug(f"Supertrend calculado exitosamente.")
-            return df
-        except Exception as e:
-            logging.error(f"Error al calcular indicadores: {e}")
-            logging.error(traceback.format_exc())
-            return df
-
-    def generar_senal_trading(self, df):
-        """Genera señales de trading basadas en el Supertrend."""
-        try:
-            if df.empty or 'Supertrend' not in df.columns:
-                raise ValueError("Datos insuficientes o falta la columna 'Supertrend'.")
-
-            close = df['close'].iloc[-1]
-            supertrend = df['Supertrend'].iloc[-1]
-
-            logging.info(f"Valores de Indicadores - Close: {close}, Supertrend: {supertrend}")
-
-            if close > supertrend:
-                logging.info(f"Señal de Compra detectada en {df.index[-1]}")
-                return "Señal de Compra"
-
-            elif close < supertrend:
-                logging.info(f"Señal de Venta detectada en {df.index[-1]}")
-                return "Señal de Venta"
-
-            logging.info(f"No se detectó señal en {df.index[-1]}.")
-            return None
-        except Exception as e:
-            logging.error(f"Error al generar la señal de trading: {e}")
-            logging.error(traceback.format_exc())
-            return None
-
-    def analizar_senal_para_par(self, pair):
-        """Función que maneja el análisis de señales para cada par."""
-        try:
-            logging.info(f"Analizando señal para {pair}")
-            now = datetime.now(timezone.utc)
-            start_date = now - timedelta(hours=12)  # Últimas 12 horas
-            df = self.obtener_datos_postgresql(pair, start_date, now)
-            if df.empty:
-                logging.warning(f"No se obtuvieron datos para {pair}.")
-                return None
-
-            df = self.calcular_indicadores(df)
-            return self.generar_senal_trading(df)
-        except ValueError as e:
-            logging.error(f"Error en el análisis de señales para {pair}: {str(e)}")
-            logging.error(traceback.format_exc())
-        except Exception as e:
-            logging.error(f"Error inesperado al analizar la señal para {pair}: {str(e)}")
-            logging.error(traceback.format_exc())
-        return None
-
-    def analizar_senales(self):
-        """Analiza todas las señales para los pares de divisas en config.json."""
-        pares_a_analizar = config['pairs']
-        resultados = {}
-
-        logging.info(f"Analizando señales para los pares: {pares_a_analizar}")
-
-        for pair in pares_a_analizar:
-            senal = self.analizar_senal_para_par(pair)
-            if senal:
-                resultados[pair] = senal
-
-        return resultados
+        hora_actual_colombia = datetime.now(zona_colombia)
+        return hora_actual_colombia.strftime('%Y-%m-%d %H:%M:%S')
 
     def tiempo_para_proxima_vela(self):
         """Calcula el tiempo restante hasta la próxima vela de 3 minutos."""
         ahora = datetime.now(timezone.utc)
-        proxima_vela = ahora.replace(minute=(ahora.minute // 3) * 3, second=0, microsecond=0) + timedelta(minutes=3)
-        return (proxima_vela - ahora).total_seconds()
+        minutos_actuales = ahora.minute % 3
+        segundos_actuales = ahora.second
+        segundos_restantes = (2 - minutos_actuales) * 60 + (60 - segundos_actuales)
+        return max(0, segundos_restantes)
 
     def ejecutar_analisis_cuando_nueva_vela(self):
-        """Ejecuta el análisis de señales sincronizado con la creación de nuevas velas de 3 minutos."""
+        """Ejecuta el análisis al inicio de cada nueva vela de 3 minutos."""
         while True:
-            # Calcular el tiempo hasta la próxima vela de 3 minutos
-            tiempo_restante = self.tiempo_para_proxima_vela()
-            logging.info(f"Esperando {tiempo_restante} segundos para la próxima vela de 3 minutos.")
-            time.sleep(tiempo_restante)  # Esperar hasta la nueva vela
-            logging.info("Iniciando análisis de señales con nueva vela de 3 minutos.")
-            
-            # Ejecutar el análisis de señales
-            senales = self.analizar_senales()
-
-            # Guardar las señales en el archivo JSON
-            self.guardar_senales_en_json(senales)
-            logging.info("Análisis de señales completado y guardado.")
-
-    def guardar_senales_en_json(self, senales):
-        """Guarda las señales generadas en el archivo JSON, incluyendo la fecha y hora de Colombia."""
-        try:
-            timestamp_colombia = self.obtener_hora_colombia()  # Obtener la hora en Colombia
-            senales['last_timestamp'] = timestamp_colombia  # Agregar la hora al archivo JSON
-
-            with open(SIGNALS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(senales, f, indent=4, ensure_ascii=False)
-            logging.info(f"Señales guardadas en {SIGNALS_FILE} con timestamp {timestamp_colombia}.")
-        except Exception as e:
-            logging.error(f"Error al guardar las señales en {SIGNALS_FILE}: {e}")
-
-# Crear un hilo para ejecutar el análisis sincronizado con la creación de nuevas velas de 3 minutos
-def iniciar_hilo_analisis():
-    signal_analyzer = ForexSignalAnalyzer(db_config=config['db_config'])
-    hilo_analisis = threading.Thread(target=signal_analyzer.ejecutar_analisis_cuando_nueva_vela)
-    hilo_analisis.daemon = True  # Hilo como demonio
-    hilo_analisis.start()
-
-if __name__ == "__main__":
-    iniciar_hilo_analisis()
-    while True:
-        time.sleep(1)  # Mantener el script corriendo
+            try:
+                tiempo_restante = self.tiempo_para_proxima_vela()
+                logger.info(f"Esperando {tiempo_restante} segundos para la próxima vela de 3 minutos.")
+                time.sleep(tiempo_restante)
+                logger.info("Iniciando análisis de señales.")
+                self.analizar_senales()
+            except Exception as e:
+                logger.error(f"Error en el bucle principal: {e}", exc_info=True)
+                time.sleep(60)

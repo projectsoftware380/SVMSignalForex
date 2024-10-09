@@ -31,7 +31,7 @@ class CandlePatternAnalyzer:
                 table = 'forex_data_3m'
             elif timeframe == '15m':
                 table = 'forex_data_15m'
-            elif timeframe == '4h':
+            elif timeframe == '4h':  # Cambiado de '4H' a '4h'
                 table = 'forex_data_4h'
             else:
                 raise ValueError(f"Temporalidad {timeframe} no válida")
@@ -77,9 +77,9 @@ class CandlePatternAnalyzer:
                 result = getattr(talib, pattern)(df['open'], df['high'], df['low'], df['close'])
 
                 # Penúltimo valor indica el patrón detectado (positivo para alcista, negativo para bajista)
-                if result.iloc[0] > 0 and pattern in patrones_alcistas:
+                if result.iloc[-1] > 0 and pattern in patrones_alcistas:
                     patrones[pattern] = 'alcista'
-                elif result.iloc[0] < 0 and pattern in patrones_bajistas:
+                elif result.iloc[-1] < 0 and pattern in patrones_bajistas:
                     patrones[pattern] = 'bajista'
 
             if patrones:
@@ -110,3 +110,19 @@ class CandlePatternAnalyzer:
                     patrones_resultantes[temporalidad] = patrones_detectados
 
         return patrones_resultantes
+
+    def reindexar_dataframe(self, df, timeframe):
+        """
+        Reindexa el DataFrame según la temporalidad específica.
+        """
+        try:
+            if timeframe == '3m':
+                df = df.asfreq('3min')
+            elif timeframe == '15m':
+                df = df.asfreq('15min')
+            elif timeframe == '4h':  # Cambiado de '4H' a '4h'
+                df = df.asfreq('4h')
+            return df
+        except Exception as e:
+            logging.error(f"Error al reindexar el DataFrame: {e}")
+            return df

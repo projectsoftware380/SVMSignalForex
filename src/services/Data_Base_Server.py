@@ -49,11 +49,12 @@ class DataBaseServer:
         self._stop_event = threading.Event()
         self._running = False
         self.db_synced = False  # Bandera para activar el evento solo una vez
+        self.actualizacion_status = {}  # Estado de la actualización para cada par
 
     def verificar_estado_mercado(self):
         """Consulta la API de Polygon para determinar si el mercado está abierto."""
         url = "https://api.polygon.io/v1/marketstatus/now"
-        params = {"apiKey": config["api_key_polygon"]}  # Reemplaza con tu API Key
+        params = {"apiKey": config["api_key_polygon"]}
         try:
             response = requests.get(url, params=params)
             data = response.json()
@@ -96,6 +97,37 @@ class DataBaseServer:
         else:
             return None
 
+    def verificar_actualizacion_tablas(self, conn, pair):
+        """Verifica el estado de actualización de las tablas para un par."""
+        timeframes = ['3m', '15m', '4h']
+        current_time = datetime.now(timezone.utc)  # Usar timezone-aware datetime
+
+        estado = {}
+        for timespan in timeframes:
+            ultimo_timestamp = self.obtener_ultimo_timestamp(conn, pair, timespan)
+            if ultimo_timestamp:
+                # Asegurarse de que `ultimo_timestamp` sea aware
+                if ultimo_timestamp.tzinfo is None:
+                    ultimo_timestamp = ultimo_timestamp.replace(tzinfo=timezone.utc)
+
+                # Lógica de desfase según el timespan
+                if timespan == '3m':
+                    desfase_permitido = timedelta(minutes=6)
+                elif timespan == '15m':
+                    desfase_permitido = timedelta(minutes=30)
+                elif timespan == '4h':
+                    desfase_permitido = timedelta(hours=5)
+
+                if current_time - ultimo_timestamp <= desfase_permitido:
+                    estado[timespan] = True  # Tabla actualizada
+                else:
+                    estado[timespan] = False  # Tabla desactualizada
+            else:
+                estado[timespan] = False  # No hay datos en la tabla
+
+        self.actualizacion_status[pair] = estado
+        return estado
+
     def insertar_datos(self, conn, datos, pair, timespan):
         """Inserta los datos obtenidos en la tabla PostgreSQL en bloques de 5000 registros."""
         cursor = conn.cursor()
@@ -103,18 +135,17 @@ class DataBaseServer:
         # Determinar la tabla adecuada según el timespan
         table_name = f'forex_data_{timespan}'
 
-        batch_size = 5000  # Cambiar el tamaño de los bloques de inserción a 5000
+        batch_size = 5000
         count = 0
 
         for result in datos.get("results", []):
-            timestamp = result['t']  # Unix timestamp en milisegundos
+            timestamp = result['t']
             open_price = result['o']
             close_price = result['c']
             high_price = result['h']
             low_price = result['l']
             volume = result['v']
 
-            # Inserta con manejo de duplicados, si ya existe no hace nada
             query = f"""
             INSERT INTO {table_name} (timestamp, pair, open, close, high, low, volume)
             VALUES (to_timestamp(%s / 1000.0), %s, %s, %s, %s, %s, %s)
@@ -124,9 +155,9 @@ class DataBaseServer:
 
             count += 1
             if count % batch_size == 0:
-                conn.commit()  # Confirmar cada 5000 inserciones
+                conn.commit()
 
-        conn.commit()  # Confirmar al final cualquier inserción pendiente
+        conn.commit()
         cursor.close()
 
     def obtener_datos_historicos(self, pairs, timespan, retention_period_days):
@@ -140,24 +171,19 @@ class DataBaseServer:
                 logging.error(f"No se pudo conectar a la base de datos para {pair}")
                 continue
 
-            # Cambiar el rango de fechas a 5 días de datos
-            end_date = datetime.now(timezone.utc)  # Aware datetime
-            start_date = end_date - timedelta(days=5)  # Rango de 5 días
+            end_date = datetime.now(timezone.utc)
+            start_date = end_date - timedelta(days=5)
 
-            # Obtener el penúltimo timestamp en la base de datos
             penultimo_timestamp = self.obtener_penultimo_timestamp(conn, pair, timespan)
 
-            # Convertir 'penultimo_timestamp' a aware datetime si es naive
             if penultimo_timestamp is not None and penultimo_timestamp.tzinfo is None:
                 penultimo_timestamp = penultimo_timestamp.replace(tzinfo=timezone.utc)
 
-            # Comparación entre ambos aware datetime
             if penultimo_timestamp and (end_date - penultimo_timestamp).total_seconds() < self.interval:
                 logging.info(f"Datos actualizados para {pair} en timespan {timespan}. No se necesita actualización.")
                 conn.close()
                 continue
 
-            # Obtener datos históricos de la API de Polygon
             datos = self.historical_fetcher.obtener_datos_polygon(
                 pair_formatted,
                 multiplier=multiplier,
@@ -204,7 +230,12 @@ class DataBaseServer:
 
                 logging.info("Base de datos actualizada correctamente.")
 
-                # Esperar el tiempo normal del ciclo (3 minutos)
+                for pair in pairs:
+                    conn = self.db_manager.conectar_db()
+                    if conn:
+                        self.verificar_actualizacion_tablas(conn, pair)
+                        conn.close()
+
                 logging.info(f"Ciclo de actualización completo. Esperando {self.interval // 60} minutos para el próximo ciclo.")
                 self._stop_event.wait(self.interval)
 
@@ -225,6 +256,11 @@ class DataBaseServer:
         self._running = False
         logging.info("Deteniendo el proceso de actualización de datos.")
 
+    @app.route('/status', methods=['GET'])
+    def status():
+        """Endpoint para obtener el estado de actualización de las tablas."""
+        return jsonify(data_base_server.actualizacion_status)
+
 # Inicialización del servidor Flask
 def iniciar_servidor(db_server):
     global data_base_server
@@ -237,16 +273,12 @@ if __name__ == '__main__':
     db_config = config["db_config"]
     api_key_polygon = config["api_key_polygon"]
 
-    # Crear evento de sincronización
     db_sync_event = threading.Event()
 
-    # Instancias necesarias
     db_manager = DatabaseManager(db_config)
     db_connection = db_manager.conectar_db()
     historical_fetcher = HistoricalDataFetcher(api_key=api_key_polygon, db_connection=db_connection)
 
-    # Crear el servidor de base de datos con el intervalo de 3 minutos y el evento de sincronización
     data_base_server = DataBaseServer(db_manager, historical_fetcher, db_sync_event, interval=180)
 
-    # Iniciar el servidor Flask con la instancia de base de datos
     iniciar_servidor(data_base_server)

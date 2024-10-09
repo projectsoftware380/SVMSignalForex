@@ -1,27 +1,25 @@
-import argparse
 import os
-import json
 import logging
+import json
+from flask import Flask, jsonify
 import threading
+from datetime import datetime
+import pytz  # Para la zona horaria de Colombia
+import argparse
 import time
-from datetime import datetime, timezone
-from flask import Flask, jsonify, request
+
+# Asegurarse de que Python puede encontrar los módulos
 import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-# Añadir el directorio 'src' al sys.path para que Python lo encuentre
-current_dir = os.path.dirname(os.path.abspath(__file__))
-src_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
-if src_dir not in sys.path:
-    sys.path.append(src_dir)
-
+# Importar la clase ForexSignalAnalyzer
 from src.senales.ForexSignalAnalyzer import ForexSignalAnalyzer
 
-# Verificar y crear el directorio de logs si no existe
-log_dir = os.path.join(src_dir, 'src', 'logs')
+# Configuración del logger para el servidor
+log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs'))
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
-# Configurar logging para guardar en 'src/logs/forex_signal_server.log'
 log_file = os.path.join(log_dir, 'forex_signal_server.log')
 logging.basicConfig(
     filename=log_file,
@@ -30,88 +28,105 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Instanciar Flask
-app = Flask(__name__)
-
-# Ruta del archivo JSON que almacenará las señales
-SIGNALS_FILE = os.path.join(src_dir, 'src', 'data', 'signals.json')
-
-# Cargar configuración desde config.json (que contiene los pares y la configuración de la base de datos)
-CONFIG_FILE = os.path.join(src_dir, 'src', 'config', 'config.json')
-with open(CONFIG_FILE, "r") as f:
+# Cargar la configuración desde el archivo config.json
+CONFIG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config', 'config.json'))
+with open(CONFIG_FILE, "r", encoding='utf-8') as f:
     config = json.load(f)
 
-# Instanciar ForexSignalAnalyzer con la configuración de la base de datos
-forex_signal_analyzer = ForexSignalAnalyzer(db_config=config["db_config"])
+# Crear la instancia de ForexSignalAnalyzer
+db_config = config['db_config']
+signal_analyzer = ForexSignalAnalyzer(db_config=db_config)
 
-def guardar_senales(senales):
-    """Guarda las señales en el archivo JSON, incluyendo el timestamp de la última actualización."""
-    with forex_signal_analyzer.lock:
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        senales['last_update'] = timestamp  # Registrar el timestamp de la última actualización
+# Configuración de Flask
+app = Flask(__name__)
 
-        with open(SIGNALS_FILE, 'w') as f:
-            json.dump(senales, f, indent=4)
-        logger.info(f"Señales guardadas en el archivo JSON con timestamp {timestamp}.")
+def obtener_hora_colombia():
+    """Obtiene el timestamp actual en la zona horaria de Colombia."""
+    zona_colombia = pytz.timezone('America/Bogota')
+    hora_actual_colombia = datetime.now(zona_colombia)
+    return hora_actual_colombia.strftime('%Y-%m-%d %H:%M:%S')
 
-@app.route('/analyze', methods=['GET'])
-def analyze_pair():
+def guardar_senales(resultados):
+    """Guarda las señales en signals.json con el timestamp actual en hora colombiana."""
+    try:
+        signals_file = signal_analyzer.SIGNALS_FILE
+
+        # Obtener el timestamp en hora colombiana
+        timestamp_colombia = obtener_hora_colombia()
+
+        # Agregar el timestamp al diccionario de resultados
+        resultados['last_update'] = timestamp_colombia
+
+        # Guardar las señales en signals.json
+        with signal_analyzer.lock:
+            with open(signals_file, 'w', encoding='utf-8') as f:
+                json.dump(resultados, f, indent=4)
+            logger.info(f"Señales guardadas en {signals_file} con timestamp {timestamp_colombia}.")
+    except Exception as e:
+        logger.error(f"Error al guardar las señales en {signals_file}: {e}")
+
+@app.route('/get_signals', methods=['GET'])
+def get_signals():
     """
-    Endpoint para analizar manualmente y guardar las señales en el archivo JSON.
+    Endpoint para obtener las señales guardadas en signals.json.
     """
     try:
-        senales = forex_signal_analyzer.analizar_senales()
-        guardar_senales(senales)
-        return jsonify({"status": "success", "message": "Análisis completado y señales guardadas."})
-    except Exception as e:
-        logger.error(f"Error en el análisis manual: {str(e)}")
-        return jsonify({"error": "Ocurrió un error durante el análisis."}), 500
+        signals_file = signal_analyzer.SIGNALS_FILE
+        if not os.path.exists(signals_file):
+            return jsonify({"error": "No se ha encontrado el archivo de señales."}), 404
 
-@app.route('/signals', methods=['GET'])
-def obtener_senales():
-    """
-    Endpoint para obtener todas las señales almacenadas en el archivo JSON.
-    """
+        with open(signals_file, 'r', encoding='utf-8') as f:
+            signals = json.load(f)
+
+        logger.info("Señales obtenidas correctamente desde el archivo.")
+        return jsonify(signals)
+    except Exception as e:
+        logger.error(f"Error al obtener las señales: {e}")
+        return jsonify({"error": "Error al obtener las señales"}), 500
+
+# Función para realizar el análisis inicial de señales al arrancar el servidor
+def analizar_y_guardar_senales():
     try:
-        # Verificar si el archivo de señales existe
-        with forex_signal_analyzer.lock:
-            if not os.path.exists(SIGNALS_FILE):
-                return jsonify({"error": "No se ha encontrado el archivo de señales."}), 404
-
-            # Leer y devolver las señales almacenadas en el archivo JSON
-            with open(SIGNALS_FILE, 'r') as f:
-                senales = json.load(f)
-
-        return jsonify(senales)
-
+        # Ejecutar el análisis de señales inmediatamente al arrancar el servidor
+        resultados = signal_analyzer.analizar_senales()
+        logger.info("Señales analizadas al iniciar el servidor.")
+        
+        # Guardar los resultados de las señales en signals.json
+        guardar_senales(resultados)
     except Exception as e:
-        logger.error(f"Error al obtener las señales: {str(e)}")
-        return jsonify({"error": "Ocurrió un error al procesar la solicitud"}), 500
+        logger.error(f"Error en el análisis inicial de señales: {e}")
+
+def ejecutar_analisis_periodico():
+    """Ejecuta el análisis de señales periódicamente cada 3 minutos."""
+    while True:
+        try:
+            tiempo_restante = signal_analyzer.tiempo_para_proxima_vela()
+            logger.info(f"Esperando {tiempo_restante} segundos para la próxima vela.")
+            time.sleep(tiempo_restante)
+
+            # Ejecutar el análisis de señales
+            logger.info("Iniciando análisis periódico de señales.")
+            resultados = signal_analyzer.analizar_senales()
+
+            # Guardar las señales en el archivo JSON
+            guardar_senales(resultados)
+        except Exception as e:
+            logger.error(f"Error en el análisis periódico de señales: {e}")
+            time.sleep(60)  # Esperar antes de reintentar
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Forex Signal Server')
-    parser.add_argument('--port', type=int, default=5000, help='Puerto para el servidor Flask')
+    parser = argparse.ArgumentParser(description='Forex Signal Analyzer Server')
+    parser.add_argument('--port', type=int, default=5003, help='Puerto para el servidor Flask')
     args = parser.parse_args()
 
-    # Sincronizar el cálculo de señales con la aparición de nuevas velas de 3 minutos
-    def run_sincronizar():
-        while True:
-            try:
-                # Realizar un análisis inmediato al iniciar
-                senales = forex_signal_analyzer.analizar_senales()
-                guardar_senales(senales)
-                logger.info("Análisis y guardado de señales completado al iniciar.")
+    # Realizar el análisis de señales inmediatamente al iniciar
+    analizar_y_guardar_senales()
 
-                tiempo_restante = 3 * 60  # Esperar 3 minutos para la próxima vela
-                logger.info(f"Esperando {tiempo_restante} segundos para la próxima vela.")
-                time.sleep(tiempo_restante)
-            except Exception as e:
-                logger.error(f"Error en sincronizar_con_nueva_vela: {str(e)}")
-                time.sleep(60)  # Esperar antes de reintentar
+    # Iniciar el hilo que ejecutará el análisis cada 3 minutos
+    hilo_analisis = threading.Thread(target=ejecutar_analisis_periodico)
+    hilo_analisis.daemon = True
+    hilo_analisis.start()
 
-    hilo_senales = threading.Thread(target=run_sincronizar)
-    hilo_senales.daemon = True
-    hilo_senales.start()
-
-    # Iniciar el servidor Flask en el puerto especificado
+    # Iniciar el servidor Flask
+    logger.info("Iniciando el servidor de análisis de señales.")
     app.run(host='0.0.0.0', port=args.port, debug=False)

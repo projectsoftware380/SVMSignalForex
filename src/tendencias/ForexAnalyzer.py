@@ -5,7 +5,10 @@ from datetime import datetime, timedelta, timezone
 import pytz
 import threading
 import logging
-from concurrent.futures import ThreadPoolExecutor  # Importación correcta
+import os
+import json
+from concurrent.futures import ThreadPoolExecutor
+import unicodedata
 
 # Configurar un logger específico para este módulo
 logger = logging.getLogger(__name__)
@@ -25,22 +28,51 @@ class ForexAnalyzer:
             f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}/{db_config['database']}"
         )
 
-    def obtener_datos_postgresql(self, pair, start_date, end_date):
+    def normalizar_string(self, valor):
+        """Normaliza un string eliminando caracteres especiales."""
+        if isinstance(valor, str):
+            return unicodedata.normalize('NFKD', valor).encode('ascii', 'ignore').decode('ascii')
+        return valor
+
+    def obtener_hora_colombia(self):
+        """Obtiene la hora actual en la zona horaria de Colombia."""
+        zona_colombia = pytz.timezone('America/Bogota')
+        hora_actual_colombia = datetime.now(zona_colombia)
+        return hora_actual_colombia.strftime('%Y-%m-%d %H:%M:%S')
+
+    def obtener_datos_postgresql(self, pair, registros=156):
         """
-        Obtiene datos OHLC de la base de datos PostgreSQL para un par de divisas específico.
+        Obtiene los datos más recientes de la base de datos PostgreSQL para un par de divisas específico.
         """
         query = f"""
         SELECT timestamp, open, high, low, close
         FROM forex_data_4h
         WHERE pair = '{pair}'
-        AND timestamp BETWEEN '{start_date}' AND '{end_date}'
-        ORDER BY timestamp DESC;
+        ORDER BY timestamp DESC
+        LIMIT {registros};
         """
         
         try:
+            # Ejecutar la consulta
             df = pd.read_sql(query, self.engine)
             df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
             df.set_index('timestamp', inplace=True)
+            
+            # Ordenar en orden ascendente para asegurar que los datos estén en la secuencia correcta
+            df = df.sort_index()
+            
+            # Verificar si los datos cubren un período reciente
+            if not df.empty:
+                ultimo_timestamp = df.index[-1]
+                fecha_actual = datetime.now(timezone.utc)
+                diferencia = fecha_actual - ultimo_timestamp
+
+                # Si la diferencia es mayor a un cierto umbral (por ejemplo, 4 horas), los datos pueden estar desactualizados
+                if diferencia > timedelta(hours=4):
+                    logger.warning(f"Los datos para {pair} podrían estar desactualizados. Último timestamp: {ultimo_timestamp}")
+                else:
+                    logger.info(f"Datos obtenidos para {pair} están actualizados. Último timestamp: {ultimo_timestamp}")
+                
             return df
         except Exception as e:
             logger.error(f"Error al obtener datos para {pair} desde la base de datos: {str(e)}")
@@ -48,22 +80,18 @@ class ForexAnalyzer:
 
     def obtener_datos_validos(self, pair):
         """
-        Obtiene los datos de mercado válidos para un par de divisas.
+        Obtiene los datos de mercado válidos para un par de divisas, asegurando que haya suficientes registros para el cálculo de Ichimoku.
         """
-        fecha_actual_servidor = datetime.now(timezone.utc)
-        fecha_inicio_utc = fecha_actual_servidor - timedelta(days=200)
-        start_date = fecha_inicio_utc.strftime('%Y-%m-%d')
-        end_date = fecha_actual_servidor.strftime('%Y-%m-%d')
+        df = self.obtener_datos_postgresql(pair)
 
-        df = self.obtener_datos_postgresql(pair, start_date, end_date)
         logger.info(f"Número de registros obtenidos para {pair}: {len(df)}")
 
         if df.empty or len(df) < 156:
             logger.warning(f"Datos insuficientes para {pair}. Se requieren al menos 156 registros.")
             return pd.DataFrame(), None
 
-        df = df.tail(156)
-        ultimo_close = df[['close']].iloc[-1]
+        df = df.tail(156)  # Tomar solo los últimos 156 registros
+        ultimo_close = df[['close']].iloc[-1]  # Último valor de cierre
         logger.info(f"Último valor de cierre para {pair}: {ultimo_close['close']}")
         return df, ultimo_close
 
@@ -122,10 +150,13 @@ class ForexAnalyzer:
             else:
                 tendencia = "Neutral"
 
-            logger.info(f"Tendencia determinada para {pair}: {tendencia}. Último precio de cierre: {ultimo_close['close']}")
+            # Normalizar la tendencia antes de guardarla
+            tendencia_normalizada = self.normalizar_string(tendencia)
+
+            logger.info(f"Tendencia determinada para {pair}: {tendencia_normalizada}. Último precio de cierre: {ultimo_close['close']}")
             with self.lock:
-                self.last_trend[pair] = tendencia
-            return tendencia
+                self.last_trend[pair] = tendencia_normalizada
+            return tendencia_normalizada
         except Exception as e:
             logger.error(f"Error al analizar par {pair}: {str(e)}")
             with self.lock:

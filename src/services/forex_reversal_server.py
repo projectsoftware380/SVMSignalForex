@@ -4,7 +4,6 @@ import json
 import logging
 import threading
 import time
-from flask import Flask, jsonify, request
 from datetime import datetime, timezone, timedelta
 import pytz
 import psycopg2
@@ -24,7 +23,8 @@ if not os.path.exists(logs_directory):
 logging.basicConfig(
     filename=os.path.join(logs_directory, 'reversal_server.log'),
     level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    encoding='utf-8'
 )
 
 # Cargar configuración desde config.json
@@ -66,81 +66,52 @@ def guardar_reversiones_en_json(reversiones):
     except Exception as e:
         logging.error(f"Error al guardar las reversiones en {REVERSIONS_FILE}: {e}")
 
-# Crear la aplicación Flask
-app = Flask(__name__)
-
-# Endpoint para obtener las reversiones almacenadas
-@app.route('/reversals', methods=['GET'])
-def obtener_reversiones():
-    try:
-        with open(REVERSIONS_FILE, 'r', encoding='utf-8') as f:
-            reversiones = json.load(f)
-        logging.info("Reversiones obtenidas correctamente.")
-        return jsonify(reversiones)
-    except FileNotFoundError:
-        logging.warning(f"Archivo {REVERSIONS_FILE} no encontrado.")
-        return jsonify({})
-    except Exception as e:
-        logging.error(f"Error al obtener las reversiones: {e}")
-        return jsonify({"error": "No se pudieron obtener las reversiones"}), 500
-
-# Endpoint para calcular las reversiones para todos los pares
-@app.route('/analyze_reversals', methods=['GET'])
-def analizar_reversiones():
-    try:
-        # Cargar los pares de divisas desde config.json
-        pares_a_analizar = config['pairs']
-        reversiones = {}
-
-        for pair in pares_a_analizar:
-            # Calcular la reversión para cada par
-            reversion = forex_reversal_analyzer.analizar_reversion_para_par(pair)
-            if reversion:
-                reversiones[pair] = reversion
-
-        # Guardar los resultados en el archivo JSON
-        guardar_reversiones_en_json(reversiones)
-
-        logging.info("Reversiones calculadas correctamente.")
-        return jsonify(reversiones)
-    except Exception as e:
-        logging.error(f"Error al analizar las reversiones: {e}")
-        return jsonify({"error": "Ocurrió un error al analizar las reversiones"}), 500
-
-# Función para ejecutar el análisis sincronizado con la nueva vela de 15 minutos
-def ejecutar_analisis_cuando_nueva_vela():
+# Función para ejecutar el análisis de reversiones automáticamente sin necesidad de invocar los endpoints
+def ejecutar_analisis_automatico():
     while True:
         try:
+            # Cargar los pares de divisas desde config.json
+            pares_a_analizar = config['pairs']
+            reversiones = {}
+
+            # Ejecutar análisis para cada par
+            for pair in pares_a_analizar:
+                reversion = forex_reversal_analyzer.analizar_reversion_para_par(pair)
+                if reversion is None:
+                    logging.warning(f"Análisis de reversión para {pair} no pudo completarse.")
+                    reversiones[pair] = "Error en análisis"
+                else:
+                    reversiones[pair] = reversion
+
+            # Guardar los resultados en el archivo JSON
+            guardar_reversiones_en_json(reversiones)
+
+            logging.info("Análisis de reversiones completado y guardado.")
+            
             # Calcular el tiempo hasta la próxima vela de 15 minutos
             tiempo_restante = forex_reversal_analyzer.tiempo_para_proxima_vela()
             logging.info(f"Esperando {tiempo_restante} segundos para la próxima vela de 15 minutos.")
             time.sleep(tiempo_restante)
-
-            # Ejecutar el análisis de reversiones para todos los pares cuando se genere una nueva vela
-            logging.info("Iniciando análisis de reversión con nueva vela de 15 minutos.")
-            reversiones = forex_reversal_analyzer.analizar_reversiones()
-
-            # Guardar las reversiones en el archivo JSON
-            guardar_reversiones_en_json(reversiones)
-            logging.info("Análisis de reversiones completado y guardado.")
         except Exception as e:
-            logging.error(f"Error en el análisis de reversiones sincronizado: {e}")
+            logging.error(f"Error en el análisis automático de reversiones: {e}")
             time.sleep(60)  # Esperar antes de intentar nuevamente en caso de error
 
 # Iniciar el análisis de reversiones en un hilo en segundo plano
 def iniciar_hilo_analisis():
-    hilo_analisis = threading.Thread(target=ejecutar_analisis_cuando_nueva_vela)
+    hilo_analisis = threading.Thread(target=ejecutar_analisis_automatico)
     hilo_analisis.daemon = True  # Hilo como demonio
     hilo_analisis.start()
 
-# Iniciar el servidor
+# Iniciar el servidor sin necesidad de endpoints para desencadenar el análisis
 if __name__ == '__main__':
     try:
         logging.info("Iniciando el servidor de reversiones en el puerto 5001...")
-        # Iniciar el análisis en segundo plano
+
+        # Iniciar el análisis automático en segundo plano
         iniciar_hilo_analisis()
 
-        # Iniciar la aplicación Flask
-        app.run(port=5001)
+        # Mantener el servidor activo (si hay necesidad de endpoints adicionales)
+        while True:
+            time.sleep(1)
     except Exception as e:
         logging.error(f"Error al iniciar el servidor: {e}")

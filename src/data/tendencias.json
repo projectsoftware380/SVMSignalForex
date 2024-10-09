@@ -1,31 +1,118 @@
 {
-    "GBPUSD": "Tendencia Alcista",
-    "USDJPY": "Tendencia Bajista",
-    "EURUSD": "Tendencia Alcista",
-    "USDCHF": "Neutral",
-    "AUDUSD": "Neutral",
-    "GBPJPY": "Tendencia Bajista",
-    "USDCAD": "Tendencia Bajista",
-    "AUDJPY": "Neutral",
-    "EURJPY": "Tendencia Bajista",
-    "NZDUSD": "Neutral",
-    "CHFJPY": "Neutral",
-    "NZDJPY": "Tendencia Alcista",
-    "EURAUD": "Neutral",
-    "EURGBP": "Tendencia Bajista",
-    "CADJPY": "Tendencia Bajista",
-    "EURCAD": "Neutral",
-    "GBPAUD": "Neutral",
-    "GBPNZD": "Neutral",
-    "EURNZD": "Neutral",
-    "GBPCAD": "Neutral",
-    "EURSGD": "Tendencia Alcista",
-    "EURTRY": "Tendencia Bajista",
-    "USDSGD": "Tendencia Bajista",
-    "USDMXN": "Tendencia Bajista",
-    "USDHKD": "Neutral",
-    "USDPLN": "Tendencia Bajista",
-    "USDZAR": "Neutral",
-    "XAUUSD": "Neutral",
-    "XAGUSD": "Neutral"
+    "EURUSD": {
+        "tendencia": "Tendencia Bajista",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "USDJPY": {
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "GBPUSD": {
+        "tendencia": "Tendencia Bajista",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "AUDUSD": {
+        "tendencia": "Tendencia Bajista",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "USDCHF": {
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "USDCAD": {
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "NZDUSD": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "EURJPY": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "GBPJPY": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "AUDJPY": {
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "NZDJPY": {
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "CADJPY": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "CHFJPY": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "EURGBP": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "EURAUD": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "EURCAD": {
+        "tendencia": "Tendencia Bajista",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "EURNZD": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "GBPAUD": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "GBPCAD": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "GBPNZD": {
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 01:42:48"
+    },
+    "USDZAR": {
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 01:42:49"
+    },
+    "EURTRY": {
+        "tendencia": "Tendencia Bajista",
+        "timestamp": "2024-10-09 01:42:49"
+    },
+    "USDSGD": {
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 01:42:49"
+    },
+    "EURSGD": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:49"
+    },
+    "USDMXN": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:49"
+    },
+    "USDPLN": {
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 01:42:49"
+    },
+    "USDHKD": {
+        "tendencia": "Tendencia Bajista",
+        "timestamp": "2024-10-09 01:42:49"
+    },
+    "XAUUSD": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:49"
+    },
+    "XAGUSD": {
+        "tendencia": "Neutral",
+        "timestamp": "2024-10-09 01:42:49"
+    }
 }
