@@ -1,118 +1,118 @@
 {
     "EURUSD": {
         "tendencia": "Tendencia Bajista",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:31"
     },
     "USDJPY": {
         "tendencia": "Tendencia Alcista",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:31"
     },
     "GBPUSD": {
         "tendencia": "Tendencia Bajista",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:31"
     },
     "AUDUSD": {
         "tendencia": "Tendencia Bajista",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:31"
     },
     "USDCHF": {
         "tendencia": "Tendencia Alcista",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:31"
     },
     "USDCAD": {
         "tendencia": "Tendencia Alcista",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:31"
     },
     "NZDUSD": {
-        "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:48"
+        "tendencia": "Tendencia Bajista",
+        "timestamp": "2024-10-09 17:05:31"
     },
     "EURJPY": {
-        "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:48"
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 17:05:31"
     },
     "GBPJPY": {
-        "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:48"
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 17:05:31"
     },
     "AUDJPY": {
         "tendencia": "Tendencia Alcista",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:31"
     },
     "NZDJPY": {
         "tendencia": "Tendencia Alcista",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:31"
     },
     "CADJPY": {
-        "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:48"
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 17:05:31"
     },
     "CHFJPY": {
         "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "EURGBP": {
-        "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:48"
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 17:05:32"
     },
     "EURAUD": {
-        "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:48"
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 17:05:32"
     },
     "EURCAD": {
         "tendencia": "Tendencia Bajista",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "EURNZD": {
         "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "GBPAUD": {
-        "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:48"
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 17:05:32"
     },
     "GBPCAD": {
         "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "GBPNZD": {
         "tendencia": "Tendencia Alcista",
-        "timestamp": "2024-10-09 01:42:48"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "USDZAR": {
         "tendencia": "Tendencia Alcista",
-        "timestamp": "2024-10-09 01:42:49"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "EURTRY": {
         "tendencia": "Tendencia Bajista",
-        "timestamp": "2024-10-09 01:42:49"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "USDSGD": {
         "tendencia": "Tendencia Alcista",
-        "timestamp": "2024-10-09 01:42:49"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "EURSGD": {
-        "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:49"
+        "tendencia": "Tendencia Alcista",
+        "timestamp": "2024-10-09 17:05:32"
     },
     "USDMXN": {
         "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:49"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "USDPLN": {
         "tendencia": "Tendencia Alcista",
-        "timestamp": "2024-10-09 01:42:49"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "USDHKD": {
         "tendencia": "Tendencia Bajista",
-        "timestamp": "2024-10-09 01:42:49"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "XAUUSD": {
         "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:49"
+        "timestamp": "2024-10-09 17:05:32"
     },
     "XAGUSD": {
         "tendencia": "Neutral",
-        "timestamp": "2024-10-09 01:42:49"
+        "timestamp": "2024-10-09 17:05:32"
     }
 }

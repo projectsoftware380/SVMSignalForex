@@ -7,7 +7,7 @@ import time
 import psycopg2
 import json
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # Ajuste para encontrar las clases SignalManager y SignalTracker
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
@@ -111,13 +111,14 @@ def seguimiento_senales_automatico():
             continue
         try:
             signal_tracker = SignalTracker(conn, logger=logging)
-            signal_tracker.replicar_logica_senal_activa()
+            # Verifica inactivación de señales con más de 1 hora de activas
+            signal_tracker.replicar_logica_senal_activa()  # Verifica inactivación
             logging.info("Señales replicadas y estado actualizado automáticamente.")
         except Exception as e:
             logging.error(f"Error durante el seguimiento automático de señales: {e}", exc_info=True)
         finally:
             conn.close()
-        time.sleep(180)
+        time.sleep(180)  # Espera de 3 minutos antes de volver a ejecutar el seguimiento
 
 # Ruta de Flask para que los clientes obtengan solo las señales activas de tracked_signals
 @app.route('/get_signal', methods=['GET'])
@@ -128,35 +129,45 @@ def get_signal():
         return jsonify({'error': 'No se pudo conectar a la base de datos'}), 500
     try:
         with conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT id, par, tipo, accion, timestamp, timeframe_operacion, estado, timestamp_actual
-                FROM tracked_signals
-                WHERE estado = 'activa'
-                ORDER BY timestamp DESC;
-            """)
+            cursor.execute("""SELECT id, par, tipo, accion, timestamp, timeframe_operacion, estado, timestamp_actual
+                              FROM tracked_signals
+                              WHERE estado = 'activa'
+                              ORDER BY timestamp DESC;""")
             results = cursor.fetchall()
             if results:
                 colnames = [desc[0] for desc in cursor.description]
-                signals = []
+                signals = {}
+                active_signals = []
                 for row in results:
                     signal = dict(zip(colnames, row))
-                    # Convertir los timestamps a objetos datetime si no lo son
+                    
+                    # Convertir las fechas si es necesario
                     if isinstance(signal['timestamp'], str):
                         signal['timestamp'] = datetime.fromisoformat(signal['timestamp'])
                     if isinstance(signal['timestamp_actual'], str):
                         signal['timestamp_actual'] = datetime.fromisoformat(signal['timestamp_actual'])
-                    # Calcular tiempo_senal_activa
-                    tiempo_activacion = signal['timestamp_actual'] - signal['timestamp']
-                    minutos, segundos = divmod(tiempo_activacion.total_seconds(), 60)
-                    horas, minutos = divmod(minutos, 60)
-                    dias, horas = divmod(horas, 24)
-                    tiempo_senal_activa = f"{int(dias)}d {int(horas)}h {int(minutos)}m {int(segundos)}s"
-                    signal['tiempo_senal_activa'] = tiempo_senal_activa
-                    # Convertir los timestamps a string ISO 8601
-                    signal['timestamp'] = signal['timestamp'].isoformat()
-                    signal['timestamp_actual'] = signal['timestamp_actual'].isoformat()
-                    signals.append(signal)
-                return jsonify(signals), 200
+                    
+                    # Inactivar señales activas por más de 60 minutos
+                    if signal['timestamp_actual'] - signal['timestamp'] > timedelta(minutes=60):
+                        cursor.execute("""UPDATE tracked_signals
+                                          SET estado = 'inactiva'
+                                          WHERE id = %s""", (signal['id'],))
+                        conn.commit()
+                        logging.info(f"Señal inactivada: {signal['id']}")
+                    else:
+                        # Evitar duplicados basados en el par (símbolo)
+                        if signal['par'] not in signals:
+                            signals[signal['par']] = signal
+                            active_signals.append(signal)
+                        else:
+                            # Si existe una señal más reciente, inactivar la antigua
+                            cursor.execute("""UPDATE tracked_signals
+                                              SET estado = 'inactiva'
+                                              WHERE id = %s""", (signals[signal['par']]['id'],))
+                            conn.commit()
+                            logging.info(f"Señal anterior inactivada para el par: {signal['par']}")
+
+                return jsonify(active_signals), 200
             else:
                 return jsonify({'mensaje': 'No se encontraron señales activas'}), 404
     except Exception as e:

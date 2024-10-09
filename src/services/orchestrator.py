@@ -99,7 +99,7 @@ class ServerOrchestrator:
         logging.info("Base de datos actualizada. Iniciando servidores de análisis.")
 
         # Iniciar los demás servidores en el orden especificado
-        self.start_server("Tendencia", "python src/services/forex_analyzer_server.py")  # Este es el servidor importante a agregar
+        self.start_server("Tendencia", "python src/services/forex_analyzer_server.py")
         self.start_server("Reversion", "python src/services/forex_reversal_server.py")
         self.start_server("Señales", "python src/services/forex_signal_server.py")
         self.start_server("Patrones", "python src/services/candle_pattern_server.py")

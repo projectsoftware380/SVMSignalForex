@@ -6,17 +6,13 @@
         }
     },
     "USDJPY": {
-        "CDLHAMMER": {
-            "tipo": "Alcista",
-            "timeframe": "15m"
-        },
         "CDLDOJI": {
             "tipo": "Alcista",
             "timeframe": "4h"
         }
     },
     "GBPUSD": {
-        "CDLDOJI": {
+        "CDLHAMMER": {
             "tipo": "Alcista",
             "timeframe": "4h"
         }
@@ -28,7 +24,7 @@
         },
         "CDLHAMMER": {
             "tipo": "Alcista",
-            "timeframe": "15m"
+            "timeframe": "4h"
         }
     },
     "USDCHF": {
@@ -37,16 +33,11 @@
             "timeframe": "4h"
         }
     },
-    "USDCAD": {
-        "CDLDOJI": {
-            "tipo": "Alcista",
-            "timeframe": "4h"
-        }
-    },
+    "USDCAD": {},
     "NZDUSD": {
-        "CDLHAMMER": {
+        "CDLENGULFING": {
             "tipo": "Alcista",
-            "timeframe": "4h"
+            "timeframe": "15m"
         },
         "CDLDOJI": {
             "tipo": "Alcista",
@@ -66,25 +57,16 @@
         }
     },
     "AUDJPY": {
-        "CDLHAMMER": {
-            "tipo": "Alcista",
-            "timeframe": "15m"
-        },
         "CDLDOJI": {
             "tipo": "Alcista",
             "timeframe": "4h"
         }
     },
-    "NZDJPY": {
-        "CDLDOJI": {
-            "tipo": "Alcista",
-            "timeframe": "4h"
-        }
-    },
+    "NZDJPY": {},
     "CADJPY": {
         "CDLDOJI": {
             "tipo": "Alcista",
-            "timeframe": "4h"
+            "timeframe": "15m"
         }
     },
     "CHFJPY": {
@@ -95,6 +77,10 @@
     },
     "EURGBP": {
         "CDLDOJI": {
+            "tipo": "Alcista",
+            "timeframe": "4h"
+        },
+        "CDLENGULFING": {
             "tipo": "Alcista",
             "timeframe": "4h"
         }
@@ -108,7 +94,7 @@
     "EURCAD": {
         "CDLDOJI": {
             "tipo": "Alcista",
-            "timeframe": "4h"
+            "timeframe": "3m"
         }
     },
     "EURNZD": {
@@ -118,10 +104,6 @@
         }
     },
     "GBPAUD": {
-        "CDLENGULFING": {
-            "tipo": "Alcista",
-            "timeframe": "15m"
-        },
         "CDLDOJI": {
             "tipo": "Alcista",
             "timeframe": "4h"
@@ -137,14 +119,13 @@
         "CDLDOJI": {
             "tipo": "Alcista",
             "timeframe": "4h"
-        }
-    },
-    "USDZAR": {
-        "CDLDOJI": {
+        },
+        "CDLHAMMER": {
             "tipo": "Alcista",
             "timeframe": "4h"
         }
     },
+    "USDZAR": {},
     "EURTRY": {
         "CDLDOJI": {
             "tipo": "Alcista",
@@ -161,14 +142,13 @@
         "CDLDOJI": {
             "tipo": "Alcista",
             "timeframe": "4h"
-        }
-    },
-    "USDMXN": {
-        "CDLDOJI": {
+        },
+        "CDLENGULFING": {
             "tipo": "Alcista",
-            "timeframe": "4h"
+            "timeframe": "15m"
         }
     },
+    "USDMXN": {},
     "USDPLN": {},
     "USDHKD": {
         "CDLDOJI": {
@@ -177,6 +157,10 @@
         }
     },
     "XAUUSD": {
+        "CDLENGULFING": {
+            "tipo": "Bajista",
+            "timeframe": "3m"
+        },
         "CDLDOJI": {
             "tipo": "Alcista",
             "timeframe": "4h"
@@ -188,5 +172,5 @@
             "timeframe": "4h"
         }
     },
-    "last_timestamp": "2024-10-09 01:27:12"
+    "last_timestamp": "2024-10-09 17:24:09"
 }

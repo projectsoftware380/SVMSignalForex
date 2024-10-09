@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import psycopg2
 
 class SignalTracker:
@@ -8,24 +8,32 @@ class SignalTracker:
         self.logger = logger or logging.getLogger()
 
     def obtener_signales_generadas_db(self):
-        """Carga las señales generadas desde la base de datos."""
+        """Carga las señales generadas desde la base de datos, eliminando señales repetidas por par."""
         try:
             with self.conn.cursor() as cur:
-                cur.execute("SELECT id, par, tipo, accion, timestamp, timeframe_operacion FROM generated_signals")
+                cur.execute("""
+                    SELECT id, par, tipo, accion, timestamp, timeframe_operacion
+                    FROM generated_signals
+                    ORDER BY timestamp DESC
+                """)
                 rows = cur.fetchall()
 
-                generated_signals = [
-                    {
-                        'id': row[0],
-                        'par': row[1],
-                        'tipo': row[2],
-                        'accion': row[3],
-                        'timestamp': row[4].isoformat(),  # Convertir timestamp a string ISO 8601
-                        'timeframe_operacion': row[5]
-                    }
-                    for row in rows
-                ]
-                self.logger.info(f"{len(generated_signals)} señales generadas cargadas correctamente desde la base de datos.")
+                # Usar un diccionario para almacenar solo una señal por par
+                signals_by_pair = {}
+                for row in rows:
+                    par = row[1]
+                    if par not in signals_by_pair:
+                        signals_by_pair[par] = {
+                            'id': row[0],
+                            'par': row[1],
+                            'tipo': row[2],
+                            'accion': row[3],
+                            'timestamp': row[4].isoformat(),  # Convertir timestamp a string ISO 8601
+                            'timeframe_operacion': row[5]
+                        }
+
+                generated_signals = list(signals_by_pair.values())
+                self.logger.info(f"{len(generated_signals)} señales únicas por par cargadas correctamente desde la base de datos.")
                 return generated_signals
 
         except psycopg2.Error as e:
@@ -45,7 +53,7 @@ class SignalTracker:
                     WHERE id = %s
                 """, (estado, tiempo_activo, timestamp_actual, signal_id))
             self.conn.commit()
-            self.logger.info(f"Señal {signal_id} actualizada correctamente en la base de datos.")
+            self.logger.info(f"Señal {signal_id} actualizada correctamente a estado {estado}.")
         except psycopg2.Error as e:
             self.logger.error(f"Error al actualizar el estado de la señal {signal_id} en la base de datos: {e}")
             self.conn.rollback()
@@ -76,8 +84,8 @@ class SignalTracker:
         """Obtiene el timestamp actual en formato UTC."""
         return datetime.now(timezone.utc).isoformat()
 
-    def verificar_condiciones_inactivacion(self, senal, estado_mercado):
-        """Verifica si la señal debe pasar a inactiva según las condiciones específicas del mercado."""
+    def verificar_condiciones_inactivacion(self, senal, estado_mercado, tiempo_activo_max):
+        """Verifica si la señal debe pasar a inactiva según las condiciones del mercado o tiempo activo."""
         tipo = senal.get('tipo')
         tendencia = estado_mercado.get('tendencia', '')
         reversion = estado_mercado.get('reversion', '')
@@ -86,11 +94,15 @@ class SignalTracker:
         # Verificar condiciones de inactivación según el tipo de señal
         if tipo == 'Señal 1' and (tendencia != 'Tendencia Alcista' or reversion == 'Bajista' or 'Señal de Venta' in patron_velas):
             return 'inactiva'
-
         if tipo == 'Señal 2' and (tendencia != 'Tendencia Alcista' or patron_velas == 'Patrón Bajista 4h'):
             return 'inactiva'
-
         if tipo == 'Señal 3' and (tendencia != 'Tendencia Alcista' or reversion == 'Bajista' or patron_velas == 'Patrón Bajista 15m'):
+            return 'inactiva'
+
+        # Inactivar la señal si ha estado activa más de 60 minutos
+        tiempo_activo = (datetime.now(timezone.utc) - datetime.fromisoformat(senal['timestamp'])).total_seconds() / 60
+        if tiempo_activo > tiempo_activo_max:
+            self.logger.info(f"Señal {senal['id']} inactivada por exceder el tiempo activo de {tiempo_activo_max} minutos.")
             return 'inactiva'
 
         return 'activa'
@@ -104,7 +116,8 @@ class SignalTracker:
                 self.logger.warning("No hay señales generadas para procesar.")
                 return
 
-            estado_mercado = self.obtener_estado_mercado()  # Simulación de la obtención del estado del mercado
+            estado_mercado = self.obtener_estado_mercado()  # Obtener estado del mercado dinámicamente
+            tiempo_activo_max = 60  # Tiempo máximo activo en minutos (1 hora)
 
             for senal in generated_signals:
                 signal_id = senal.get('id')
@@ -124,15 +137,16 @@ class SignalTracker:
                 else:
                     # Actualizar el estado de la señal si ya está registrada
                     tiempo_activo = (datetime.now(timezone.utc) - datetime.fromisoformat(senal['timestamp'])).total_seconds() / 60
-                    estado_senal = self.verificar_condiciones_inactivacion(senal, estado_mercado)
+                    estado_senal = self.verificar_condiciones_inactivacion(senal, estado_mercado, tiempo_activo_max)
                     self.actualizar_estado_senal_db(signal_id, estado_senal, tiempo_activo, ahora_utc)
 
         except Exception as e:
             self.logger.error(f"Error durante la replicación de la lógica de señal activa: {e}")
 
     def obtener_estado_mercado(self):
-        """Simular la obtención del estado del mercado (para condiciones de inactivación)."""
-        # Aquí se puede simular el estado del mercado. Lo ideal sería obtener estos datos de manera dinámica.
+        """Obtener el estado del mercado de manera dinámica."""
+        # Aquí se puede integrar una API o un sistema de datos para obtener el estado del mercado.
+        # Actualmente simula un estado, pero lo ideal es conectar con un proveedor de datos en tiempo real.
         return {
             'tendencia': 'Tendencia Alcista',  # Puede ser Alcista, Bajista o Neutral
             'reversion': 'Bajista',  # Puede ser Alcista o Bajista
