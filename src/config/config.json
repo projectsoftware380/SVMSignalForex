@@ -25,6 +25,8 @@
     "profit_trailing_level": 2000,
     "trailing_stop_percentage": 30,
     "monitoreo_intervalo": 10,
+    
+    "analysis_mode": "estado",
 
     "servidores_a_ejecutar": {
         "Data_Base_Server": true,

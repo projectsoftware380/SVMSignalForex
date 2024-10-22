@@ -1,160 +1,229 @@
+import os
+import json
+import sys
 import logging
-from datetime import datetime, timezone, timedelta
+import time
+import uuid
 import psycopg2
+from datetime import datetime, timezone
+from src.SignalManager.SignalValidator import SignalValidator
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.append(ROOT_DIR)
 
 class SignalTracker:
-    def __init__(self, conn, logger=None):
-        self.conn = conn
-        self.logger = logger or logging.getLogger()
+    def __init__(self, config_file):
+        """Inicializa SignalTracker con la configuración y SignalValidator."""
+        self.logger = self.configurar_logger()
+        self.logger.info("Inicializando SignalTracker...")
+        self.config = self.cargar_configuracion(config_file)
+        self.db_config = self.config.get('db_config', {})
+        self.validator = SignalValidator(self.db_config, self.logger)
+        self.ultimo_timestamp_procesado = {}  # Diccionario para guardar el último timestamp procesado por par
 
-    def obtener_signales_generadas_db(self):
-        """Carga las señales generadas desde la base de datos, eliminando señales repetidas por par."""
+    def configurar_logger(self):
+        """Configura un logger específico para SignalTracker."""
+        log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, 'signal_tracker.log')
+
+        logger = logging.getLogger('SignalTracker')
+        logger.setLevel(logging.DEBUG)
+
+        if not logger.handlers:
+            handler = logging.FileHandler(log_file)
+            handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+            logger.addHandler(handler)
+
+        return logger
+
+    def cargar_configuracion(self, ruta):
+        """Carga la configuración desde config.json."""
         try:
-            with self.conn.cursor() as cur:
-                cur.execute("""
-                    SELECT id, par, tipo, accion, timestamp, timeframe_operacion
-                    FROM generated_signals
-                    ORDER BY timestamp DESC
-                """)
-                rows = cur.fetchall()
+            with open(ruta, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                self.logger.info("Configuración cargada exitosamente.")
+                return config
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.logger.error(f"Error al cargar {ruta}: {e}")
+            raise
 
-                # Usar un diccionario para almacenar solo una señal por par
-                signals_by_pair = {}
-                for row in rows:
-                    par = row[1]
-                    if par not in signals_by_pair:
-                        signals_by_pair[par] = {
-                            'id': row[0],
-                            'par': row[1],
-                            'tipo': row[2],
-                            'accion': row[3],
-                            'timestamp': row[4].isoformat(),  # Convertir timestamp a string ISO 8601
-                            'timeframe_operacion': row[5]
-                        }
-
-                generated_signals = list(signals_by_pair.values())
-                self.logger.info(f"{len(generated_signals)} señales únicas por par cargadas correctamente desde la base de datos.")
-                return generated_signals
-
+    def conectar_base_datos(self):
+        """Establece una conexión a la base de datos PostgreSQL."""
+        try:
+            conn = psycopg2.connect(
+                host=self.db_config['host'],
+                database=self.db_config['database'],
+                user=self.db_config['user'],
+                password=self.db_config['password'],
+                options='-c client_encoding=UTF8'
+            )
+            self.logger.info("Conexión a la base de datos PostgreSQL exitosa.")
+            return conn
         except psycopg2.Error as e:
-            self.logger.error(f"Error al cargar señales generadas desde la base de datos: {e}")
-            return []
-        except Exception as e:
-            self.logger.error(f"Error inesperado al obtener las señales generadas: {e}")
-            return []
+            self.logger.error(f"Error al conectar a la base de datos: {e}")
+            return None
 
-    def actualizar_estado_senal_db(self, signal_id, estado, tiempo_activo, timestamp_actual):
-        """Actualiza el estado de la señal en la base de datos."""
+    def obtener_senal_activa(self, par_de_divisas):
+        """Obtiene la señal activa actual para el par de divisas dado."""
+        conn = self.conectar_base_datos()
+        if not conn:
+            return None
         try:
-            with self.conn.cursor() as cur:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, par_de_divisas, tipo, accion, timestamp, timeframe, price_signal
+                    FROM tracked_signals
+                    WHERE par_de_divisas = %s AND estado = 'activo'
+                    ORDER BY timestamp DESC LIMIT 1
+                """, (par_de_divisas,))
+                return cur.fetchone()
+        except psycopg2.Error as e:
+            self.logger.error(f"Error al obtener señal activa para {par_de_divisas}: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def inactivar_senal(self, senal_id):
+        """Inactiva una señal en la tabla `tracked_signals`."""
+        conn = self.conectar_base_datos()
+        if not conn:
+            return
+        try:
+            with conn.cursor() as cur:
                 cur.execute("""
                     UPDATE tracked_signals
-                    SET estado = %s, tiempo_senal_activa = %s, timestamp_actual = %s
+                    SET estado = 'inactivo', timestamp_actual = %s
                     WHERE id = %s
-                """, (estado, tiempo_activo, timestamp_actual, signal_id))
-            self.conn.commit()
-            self.logger.info(f"Señal {signal_id} actualizada correctamente a estado {estado}.")
+                """, (datetime.now(timezone.utc), senal_id))
+                conn.commit()
+                self.logger.info(f"Señal {senal_id} inactivada exitosamente.")
         except psycopg2.Error as e:
-            self.logger.error(f"Error al actualizar el estado de la señal {signal_id} en la base de datos: {e}")
-            self.conn.rollback()
-        except Exception as e:
-            self.logger.error(f"Error inesperado al actualizar el estado de la señal {signal_id}: {e}")
+            self.logger.error(f"Error al inactivar señal {senal_id}: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
 
-    def insertar_nueva_senal_db(self, senal):
-        """Inserta una nueva señal en la tabla de señales rastreadas."""
+    def validar_y_copiar_senal(self, senal):
+        """Valida y copia la señal si es válida y reemplaza la activa."""
+        self.logger.debug(f"Validando señal: {senal}")
+
+        par_de_divisas = senal[1]
+        accion = self.validator.normalizar(senal[3])  # Normalizar la acción
+        senal_activa = self.obtener_senal_activa(par_de_divisas)
+
+        if senal_activa:
+            self.logger.info(f"Inactivando señal existente para {par_de_divisas}.")
+            self.inactivar_senal(senal_activa[0])
+
+        es_valido, tendencia, reversion, tipo_patron, timeframe = \
+            self.validator.validar_condiciones(par_de_divisas)
+
+        if es_valido:
+            tipo = self.validator.determinar_tipo_senal(tendencia, reversion, accion, tipo_patron, timeframe)
+            if tipo != 'Desconocida':
+                self.insertar_nueva_senal(senal, tipo)
+            else:
+                self.logger.warning(f"No se determinó un tipo válido para la señal: {senal}")
+        else:
+            self.logger.warning(f"Condiciones no válidas para {par_de_divisas}. No se registrará la señal.")
+
+    def insertar_nueva_senal(self, senal, tipo):
+        """Inserta una nueva señal activa en `tracked_signals`."""
+        self.logger.info(f"Insertando señal {senal[0]} en tracked_signals...")
+        conn = self.conectar_base_datos()
+        if not conn:
+            return
+
         try:
-            with self.conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO tracked_signals (id, par, tipo, accion, timestamp, timeframe_operacion, estado, timestamp_actual, tiempo_senal_activa)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO tracked_signals 
+                    (id, par_de_divisas, tipo, accion, timestamp, 
+                     timeframe, price_signal, estado, timestamp_actual) 
+                    VALUES (%s, %s, %s, %s, %s::timestamp, %s, %s, 'activo', %s)
                 """, (
-                    senal['id'], senal['par'], senal['tipo'], senal['accion'],
-                    senal['timestamp'], senal['timeframe_operacion'],
-                    senal['estado'], senal['timestamp_actual'], senal['tiempo_senal_activa']
+                    str(uuid.uuid4()), senal[1], tipo, senal[3], senal[4],
+                    senal[5], float(senal[6]), datetime.now(timezone.utc)
                 ))
-            self.conn.commit()
-            self.logger.info(f"Señal {senal['id']} registrada correctamente en la base de datos.")
+                conn.commit()
+                self.logger.info(f"Señal {senal[0]} registrada exitosamente.")
         except psycopg2.Error as e:
-            self.logger.error(f"Error al insertar la señal {senal['id']} en la base de datos: {e}")
-            self.conn.rollback()
-        except Exception as e:
-            self.logger.error(f"Error inesperado al insertar la señal {senal['id']} en la base de datos: {e}")
+            self.logger.error(f"Error al insertar señal {senal[0]}: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
 
-    def obtener_timestamp_utc(self):
-        """Obtiene el timestamp actual en formato UTC."""
-        return datetime.now(timezone.utc).isoformat()
+    def ejecutar_monitoreo(self):
+        """Ejecuta el monitoreo continuo de señales."""
+        while True:
+            self.logger.info("Iniciando monitoreo de señales.")
+            senales = self.obtener_senales_nuevas()
+            if not senales:
+                self.logger.info("No se encontraron señales nuevas.")
+            for senal in senales:
+                self.validar_y_copiar_senal(senal)
+            time.sleep(60)
 
-    def verificar_condiciones_inactivacion(self, senal, estado_mercado, tiempo_activo_max):
-        """Verifica si la señal debe pasar a inactiva según las condiciones del mercado o tiempo activo."""
-        tipo = senal.get('tipo')
-        tendencia = estado_mercado.get('tendencia', '')
-        reversion = estado_mercado.get('reversion', '')
-        patron_velas = estado_mercado.get('patron_velas', '')
+    def obtener_senales_nuevas(self):
+        """Obtiene las señales nuevas desde `generated_signals`."""
+        conn = self.conectar_base_datos()
+        if not conn:
+            return []
 
-        # Verificar condiciones de inactivación según el tipo de señal
-        if tipo == 'Señal 1' and (tendencia != 'Tendencia Alcista' or reversion == 'Bajista' or 'Señal de Venta' in patron_velas):
-            return 'inactiva'
-        if tipo == 'Señal 2' and (tendencia != 'Tendencia Alcista' or patron_velas == 'Patrón Bajista 4h'):
-            return 'inactiva'
-        if tipo == 'Señal 3' and (tendencia != 'Tendencia Alcista' or reversion == 'Bajista' or patron_velas == 'Patrón Bajista 15m'):
-            return 'inactiva'
-
-        # Inactivar la señal si ha estado activa más de 60 minutos
-        tiempo_activo = (datetime.now(timezone.utc) - datetime.fromisoformat(senal['timestamp'])).total_seconds() / 60
-        if tiempo_activo > tiempo_activo_max:
-            self.logger.info(f"Señal {senal['id']} inactivada por exceder el tiempo activo de {tiempo_activo_max} minutos.")
-            return 'inactiva'
-
-        return 'activa'
-
-    def replicar_logica_senal_activa(self):
-        """Recorrer todas las señales activas y verificar si cumplen con las condiciones de inactivación."""
         try:
-            # Cargar las señales generadas desde la base de datos
-            generated_signals = self.obtener_signales_generadas_db()
-            if not generated_signals:
-                self.logger.warning("No hay señales generadas para procesar.")
-                return
+            with conn.cursor() as cur:
+                # Obtener el timestamp del último procesamiento por par de divisas
+                ultimos_timestamps = self.obtener_ultimos_timestamps_por_par(conn)
 
-            estado_mercado = self.obtener_estado_mercado()  # Obtener estado del mercado dinámicamente
-            tiempo_activo_max = 60  # Tiempo máximo activo en minutos (1 hora)
+                # Construir la consulta para obtener señales nuevas
+                query = """
+                    SELECT id, par_de_divisas, tipo, accion, timestamp, 
+                           timeframe, price_signal 
+                    FROM generated_signals
+                    WHERE par_de_divisas = %s AND timestamp > %s
+                    ORDER BY timestamp ASC
+                """
 
-            for senal in generated_signals:
-                signal_id = senal.get('id')
-                ahora_utc = self.obtener_timestamp_utc()
+                senales_nuevas = []
+                for par_de_divisas in self.config.get('pairs', []):
+                    ultimo_timestamp = ultimos_timestamps.get(par_de_divisas, datetime.min)
+                    cur.execute(query, (par_de_divisas, ultimo_timestamp))
+                    senales = cur.fetchall()
+                    if senales:
+                        senales_nuevas.extend(senales)
+                        # Actualizar el último timestamp procesado para el par
+                        self.ultimo_timestamp_procesado[par_de_divisas] = senales[-1][4]
+                return senales_nuevas
+        except psycopg2.Error as e:
+            self.logger.error(f"Error al obtener señales nuevas: {e}")
+            return []
+        finally:
+            conn.close()
 
-                # Verificar si la señal ya existe en la base de datos (tracked_signals)
-                with self.conn.cursor() as cur:
-                    cur.execute("SELECT id FROM tracked_signals WHERE id = %s", (signal_id,))
-                    resultado = cur.fetchone()
+    def obtener_ultimos_timestamps_por_par(self, conn):
+        """Obtiene el último timestamp procesado por par de divisas."""
+        ultimos_timestamps = {}
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT par_de_divisas, MAX(timestamp) as ultimo_timestamp
+                    FROM tracked_signals
+                    GROUP BY par_de_divisas
+                """)
+                rows = cur.fetchall()
+                for row in rows:
+                    ultimos_timestamps[row[0]] = row[1]
+            return ultimos_timestamps
+        except psycopg2.Error as e:
+            self.logger.error(f"Error al obtener últimos timestamps por par: {e}")
+            return ultimos_timestamps
 
-                if resultado is None:
-                    # Registrar la señal como activa si no existe en tracked_signals
-                    senal['estado'] = 'activa'
-                    senal['timestamp_actual'] = ahora_utc
-                    senal['tiempo_senal_activa'] = 0
-                    self.insertar_nueva_senal_db(senal)
-                else:
-                    # Actualizar el estado de la señal si ya está registrada
-                    tiempo_activo = (datetime.now(timezone.utc) - datetime.fromisoformat(senal['timestamp'])).total_seconds() / 60
-                    estado_senal = self.verificar_condiciones_inactivacion(senal, estado_mercado, tiempo_activo_max)
-                    self.actualizar_estado_senal_db(signal_id, estado_senal, tiempo_activo, ahora_utc)
-
-        except Exception as e:
-            self.logger.error(f"Error durante la replicación de la lógica de señal activa: {e}")
-
-    def obtener_estado_mercado(self):
-        """Obtener el estado del mercado de manera dinámica."""
-        # Aquí se puede integrar una API o un sistema de datos para obtener el estado del mercado.
-        # Actualmente simula un estado, pero lo ideal es conectar con un proveedor de datos en tiempo real.
-        return {
-            'tendencia': 'Tendencia Alcista',  # Puede ser Alcista, Bajista o Neutral
-            'reversion': 'Bajista',  # Puede ser Alcista o Bajista
-            'patron_velas': 'Patrón Bajista 15m'  # Según timeframe: 15m, 4h, etc.
-        }
-
-    def ejecutar_proceso(self):
-        """Proceso que se ejecutará de manera continua cada 3 minutos."""
-        self.logger.info("Iniciando proceso de replicación de señales activas e inactivación.")
-        self.replicar_logica_senal_activa()
-        self.logger.info("Proceso completado. Actualizando en 3 minutos.")
+if __name__ == "__main__":
+    config_file = os.path.abspath("src/config/config.json")
+    try:
+        tracker = SignalTracker(config_file)
+        tracker.ejecutar_monitoreo()
+    except FileNotFoundError as e:
+        logging.error(e)
+        exit(1)

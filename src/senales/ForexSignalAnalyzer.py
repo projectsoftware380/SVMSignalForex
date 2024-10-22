@@ -1,183 +1,179 @@
-import psycopg2
+import os
+import logging
+import json
+import threading
 import pandas as pd
 import pandas_ta as ta
-from datetime import datetime, timezone
-import pytz  # Para obtener la hora en Colombia
-import logging
-import threading
-import time
-import os
-import json
-import unicodedata
+from datetime import datetime, timezone, timedelta
+import psycopg2
 
 # Configuración del logger
-logger = logging.getLogger(__name__)
+log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
+os.makedirs(log_dir, exist_ok=True)
+
+logger = logging.getLogger('ForexSignalAnalyzer')
+logger.setLevel(logging.INFO)
+
+file_handler = logging.FileHandler(os.path.join(log_dir, 'forex_signal_server.log'), encoding='utf-8')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
 
 class ForexSignalAnalyzer:
     def __init__(self, db_config):
+        """Inicializa la clase con la configuración de la base de datos."""
         self.db_config = db_config
         self.lock = threading.Lock()
-        # Ruta al archivo JSON donde se guardarán las señales
-        self.SIGNALS_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'signals.json')
-        # Cargar configuración desde config.json
-        CONFIG_FILE = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.json')
-        with open(CONFIG_FILE, "r", encoding='utf-8') as f:
+
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.json')
+        with open(config_path, "r", encoding='utf-8') as f:
             self.config = json.load(f)
+
         self.pairs = self.config.get("pairs", [])
+        self.analysis_mode = self.config.get("analysis_mode", "estado")
+        logger.info("ForexSignalAnalyzer inicializado correctamente con los pares: %s", self.pairs)
 
-    def normalizar_string(self, valor):
-        """Normaliza una cadena de texto eliminando caracteres especiales."""
-        if isinstance(valor, str):
-            return unicodedata.normalize('NFKD', valor).encode('ascii', 'ignore').decode('ascii')
-        return valor
-
-    def obtener_datos_bd(self, symbol, registros=150):
-        """Obtiene los datos más recientes de la base de datos y los prepara para el análisis."""
+    def obtener_conexion(self):
+        """Establece y verifica la conexión con la base de datos."""
         try:
-            logger.info(f"Obteniendo datos para {symbol}.")
             connection = psycopg2.connect(**self.db_config)
-            cursor = connection.cursor()
+            logger.info("Conexión a la base de datos establecida correctamente.")
+            return connection
+        except Exception as e:
+            logger.error("Error al conectar a la base de datos: %s", e, exc_info=True)
+            return None
 
-            # Consulta SQL para obtener los registros más recientes
-            query = """
-            SELECT timestamp, open, high, low, close, volume
+    def obtener_datos_bd(self, symbol):
+        """Obtiene los datos más recientes de la base de datos para un par de divisas."""
+        query = """
+            SELECT timestamp AT TIME ZONE 'America/Guatemala' AS timestamp_local, 
+                   open, high, low, close, volume
             FROM forex_data_3m
             WHERE pair = %s
             ORDER BY timestamp DESC
-            LIMIT %s;
-            """
-            cursor.execute(query, (symbol, registros))
-            rows = cursor.fetchall()
+            LIMIT 20;
+        """
+        try:
+            connection = self.obtener_conexion()
+            if not connection:
+                raise ConnectionError("No se pudo conectar a la base de datos.")
 
-            # Convertir a DataFrame
-            df = pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df.set_index('timestamp', inplace=True)
+            with connection.cursor() as cursor:
+                cursor.execute(query, (symbol,))
+                rows = cursor.fetchall()
 
-            # Ordenar el DataFrame en orden ascendente
-            df = df.sort_index()
+            if rows:
+                df = pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
 
-            logger.info(f"Datos obtenidos para {symbol}. Número de filas: {len(df)}")
-            logger.debug(f"Datos iniciales:\n{df.head()}")
+                # Convertir timestamps a UTC
+                df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_convert('UTC')
+                return df
 
-            if df.empty:
-                logger.warning(f"No se encontraron resultados en la base de datos para {symbol}.")
-                return pd.DataFrame()
+            logger.warning("No se encontraron datos para %s.", symbol)
+            return None
 
-            # Eliminar duplicados en los timestamps
-            df = df[~df.index.duplicated(keep='first')]
-
-            # Convertir los valores a float para asegurar compatibilidad con pandas_ta
-            cols_to_convert = ['open', 'high', 'low', 'close', 'volume']
-            df[cols_to_convert] = df[cols_to_convert].apply(pd.to_numeric, errors='coerce')
-
-            # Eliminar filas con valores NaN
-            df.dropna(subset=cols_to_convert, inplace=True)
-
-            # Reindexar el DataFrame para asegurar timestamps uniformes cada 3 minutos
-            df = df.asfreq('3min')
-
-            # Interpolar los valores faltantes
-            df[cols_to_convert] = df[cols_to_convert].interpolate(method='time')
-
-            # Eliminar filas con valores NaN restantes después de la interpolación
-            df.dropna(subset=cols_to_convert, inplace=True)
-
-            # Verificar que el DataFrame tiene suficientes filas
-            if len(df) < 22:
-                logger.error(f"Datos insuficientes para {symbol}. Se requieren al menos 22 registros.")
-                return pd.DataFrame()
-
-            logger.debug(f"Datos procesados para {symbol}:\n{df.tail()}")
-            return df
         except Exception as e:
-            logger.error(f"Error al obtener datos de la base de datos para {symbol}: {e}", exc_info=True)
-            return pd.DataFrame()
+            logger.error("Error al obtener datos para %s: %s", symbol, e, exc_info=True)
+            return None
         finally:
-            if 'connection' in locals() and connection:
-                cursor.close()
+            if connection:
                 connection.close()
 
+    def tiempo_para_proxima_vela(self):
+        """Calcula el tiempo restante para la próxima vela."""
+        ahora = datetime.now(timezone.utc)
+        siguiente_minuto = (ahora + timedelta(minutes=1)).replace(second=0, microsecond=0)
+        tiempo_restante = (siguiente_minuto - ahora).total_seconds()
+        logger.info("Tiempo restante para la próxima vela: %.2f segundos", tiempo_restante)
+        return tiempo_restante
+
     def analizar_senales(self):
-        """Analiza señales para todos los pares y guarda los resultados en un archivo JSON."""
+        """Analiza señales para todos los pares configurados."""
         resultados = {}
+        for pair in self.pairs:
+            df = self.obtener_datos_bd(pair)
+            if df is None or df.empty:
+                logger.warning("No se obtuvieron datos para %s.", pair)
+                continue
 
-        logger.info(f"Analizando señales para los pares: {self.pairs}")
+            precio_actual = df['close'].iloc[-1]
+            timestamp = df['timestamp'].iloc[-1]
+            logger.info("Precio actual obtenido desde la base de datos: %.5f", precio_actual)
 
-        for symbol in self.pairs:
-            resultado = self.analizar_senal_para_par(symbol)
-            if resultado is not None:
-                resultados[symbol] = self.normalizar_string(resultado)
+            signal = self.generar_senal(df)
+            if signal:
+                self.registrar_senal(pair, signal, precio_actual, timestamp)
+                resultados[pair] = signal
 
-        # Guardar resultados en archivo JSON
-        with self.lock:
-            timestamp_colombia = self.obtener_hora_colombia()
-            resultados['last_update'] = self.normalizar_string(timestamp_colombia)
-            with open(self.SIGNALS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(resultados, f, indent=4)
-            logger.info(f"Señales guardadas en {self.SIGNALS_FILE} con timestamp {timestamp_colombia}.")
-
+        logger.info("Señales analizadas: %s", resultados)
         return resultados
 
-    def analizar_senal_para_par(self, symbol):
-        """Analiza señal para un par específico usando Supertrend."""
-        logger.info(f"Analizando señal para {symbol}")
-        df = self.obtener_datos_bd(symbol)
-        if df.empty:
-            logger.error(f"No se pudieron obtener datos para {symbol}.")
-            return None
-
-        # Implementar la lógica de análisis de señales con Supertrend
-        signal = self.generar_senal(df)
-        return signal
-
     def generar_senal(self, df):
-        """Genera una señal basada en el indicador Supertrend."""
+        """Genera una señal basada en el modo seleccionado."""
         try:
-            # Calcular Supertrend
-            logger.info("Calculando el indicador Supertrend.")
+            # Validar si hay suficientes datos para calcular el Supertrend
+            if len(df) < 11:
+                logger.warning("Datos insuficientes para calcular Supertrend.")
+                return None
+
+            df[['high', 'low', 'close']] = df[['high', 'low', 'close']].astype(float)
+
+            # Rellenar valores NaN si existen
+            df = df.fillna(method='ffill').fillna(method='bfill')
+
+            # Calcular el Supertrend
             supertrend = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
+
+            if supertrend is None or supertrend.empty:
+                logger.error("Supertrend no se pudo calcular o devolvió None.")
+                return None
+
             df = df.join(supertrend)
 
-            logger.debug(f"Supertrend calculado:\n{df[['SUPERT_10_3.0', 'SUPERTd_10_3.0']].tail()}")
+            logger.info("Precio actual: %.5f, Supertrend: %.5f",
+                        df['close'].iloc[-1], df['SUPERT_10_3.0'].iloc[-1])
 
-            # Detectar señal de compra o venta basándose en Supertrend
-            if df['SUPERTd_10_3.0'].iloc[-2] == -1 and df['SUPERTd_10_3.0'].iloc[-1] == 1:
-                logger.info("Señal de Compra detectada con Supertrend.")
-                return "Señal de Compra"
-            elif df['SUPERTd_10_3.0'].iloc[-2] == 1 and df['SUPERTd_10_3.0'].iloc[-1] == -1:
-                logger.info("Señal de Venta detectada con Supertrend.")
-                return "Señal de Venta"
-            else:
-                logger.info("No se detectó señal (Supertrend).")
-                return "Sin Señal"
+            # Lógica de generación de señales
+            if self.analysis_mode == "estado":
+                if df['close'].iloc[-1] > df['SUPERT_10_3.0'].iloc[-1]:
+                    return 'alcista'
+                elif df['close'].iloc[-1] < df['SUPERT_10_3.0'].iloc[-1]:
+                    return 'bajista'
+                return 'neutral'
+
+            elif self.analysis_mode == "cruce":
+                if (df['close'].iloc[-2] <= df['SUPERT_10_3.0'].iloc[-2] and
+                        df['close'].iloc[-1] > df['SUPERT_10_3.0'].iloc[-1]):
+                    return 'alcista'
+                elif (df['close'].iloc[-2] >= df['SUPERT_10_3.0'].iloc[-2] and
+                      df['close'].iloc[-1] < df['SUPERT_10_3.0'].iloc[-1]):
+                    return 'bajista'
+                return 'neutral'
+
         except Exception as e:
-            logger.error(f"Error al generar señal con Supertrend: {e}", exc_info=True)
+            logger.error("Error al generar señal: %s", e, exc_info=True)
             return None
 
-    def obtener_hora_colombia(self):
-        """Obtiene la hora actual en la zona horaria de Colombia."""
-        zona_colombia = pytz.timezone('America/Bogota')
-        hora_actual_colombia = datetime.now(zona_colombia)
-        return hora_actual_colombia.strftime('%Y-%m-%d %H:%M:%S')
+    def registrar_senal(self, pair, tipo_senal, precio_actual, timestamp):
+        """Registra una señal en la base de datos."""
+        query = """
+            INSERT INTO senales (timestamp, par_de_divisas, tipo_senal, origen, price_signal)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (timestamp, par_de_divisas) DO NOTHING;
+        """
+        try:
+            connection = self.obtener_conexion()
+            if not connection:
+                raise ConnectionError("No se pudo establecer la conexión a la base de datos.")
 
-    def tiempo_para_proxima_vela(self):
-        """Calcula el tiempo restante hasta la próxima vela de 3 minutos."""
-        ahora = datetime.now(timezone.utc)
-        minutos_actuales = ahora.minute % 3
-        segundos_actuales = ahora.second
-        segundos_restantes = (2 - minutos_actuales) * 60 + (60 - segundos_actuales)
-        return max(0, segundos_restantes)
-
-    def ejecutar_analisis_cuando_nueva_vela(self):
-        """Ejecuta el análisis al inicio de cada nueva vela de 3 minutos."""
-        while True:
-            try:
-                tiempo_restante = self.tiempo_para_proxima_vela()
-                logger.info(f"Esperando {tiempo_restante} segundos para la próxima vela de 3 minutos.")
-                time.sleep(tiempo_restante)
-                logger.info("Iniciando análisis de señales.")
-                self.analizar_senales()
-            except Exception as e:
-                logger.error(f"Error en el bucle principal: {e}", exc_info=True)
-                time.sleep(60)
+            with connection.cursor() as cursor:
+                cursor.execute(query, (
+                    timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                    pair, tipo_senal, 'ForexSignalAnalyzer', float(precio_actual)
+                ))
+                connection.commit()
+                logger.info("Señal registrada: %s -> %s a %s con precio %.5f", pair, tipo_senal, timestamp, precio_actual)
+        except Exception as e:
+            logger.error("Error al registrar señal para %s: %s", pair, e, exc_info=True)
+        finally:
+            if connection:
+                connection.close()

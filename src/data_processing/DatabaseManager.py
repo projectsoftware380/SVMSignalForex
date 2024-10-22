@@ -4,7 +4,7 @@ import os
 import time
 from datetime import datetime, timezone
 
-# Configuración del logger directamente en el archivo
+# Configuración del logger
 log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
@@ -16,10 +16,11 @@ logging.basicConfig(
 )
 
 class DatabaseManager:
-    def __init__(self, db_config, max_retries=3, retry_delay=5):
+    def __init__(self, db_config, max_retries=3, retry_delay=5, batch_size=100):
         self.db_config = db_config
         self.max_retries = max_retries  # Número máximo de reintentos
         self.retry_delay = retry_delay  # Intervalo entre reintentos (segundos)
+        self.batch_size = batch_size  # Tamaño del batch para inserciones
 
     def conectar_db(self):
         """Establecer conexión con la base de datos PostgreSQL con reintentos."""
@@ -49,60 +50,90 @@ class DatabaseManager:
         cursor.execute(query, (pair,))
         ultimo_timestamp = cursor.fetchone()[0]
         cursor.close()
+
+        if ultimo_timestamp is None:
+            logging.info(f"No se encontraron registros previos para {pair} en timeframe {timeframe}.")
+        else:
+            logging.info(f"Último timestamp para {pair} en timeframe {timeframe}: {ultimo_timestamp}")
         return ultimo_timestamp
 
     def insertar_datos(self, conn, datos, pair, timeframe):
-        """Inserta los datos obtenidos en la tabla PostgreSQL en bloques pequeños, dirigiendo a la tabla adecuada."""
+        """Inserta los datos obtenidos en la tabla PostgreSQL en bloques pequeños."""
         if not datos.get("results"):
             logging.warning(f"No hay datos para insertar para {pair} en timeframe {timeframe}")
             return
 
         cursor = conn.cursor()
-        batch_size = 100  # Tamaño del batch para hacer commits cada 100 inserciones
-        count = 0
-
-        # Asignar la tabla según el timeframe
-        if timeframe == '3m':
-            table_name = 'forex_data_3m'
-        elif timeframe == '15m':
-            table_name = 'forex_data_15m'
-        elif timeframe == '4h':
-            table_name = 'forex_data_4h'
-        else:
-            logging.error(f"Timeframe {timeframe} no reconocido para la inserción de datos.")
-            return
-
+        table_name = f'forex_data_{timeframe}'
+        
         try:
-            for result in datos["results"]:
-                timestamp = result['t']
-                open_price = result['o']
-                close_price = result['c']
-                high_price = result['h']
-                low_price = result['l']
-                volume = result['v']
+            count = 0
+            batch = []
+            ultimo_timestamp = self.verificar_timestamp(conn, pair, timeframe)
+            if ultimo_timestamp is None:
+                ultimo_timestamp = datetime.utcfromtimestamp(0)  # Insertar todos los datos si no hay registros previos
 
-                # Verificación adicional para asegurar que los datos no son duplicados
+            for result in datos["results"]:
+                timestamp = result['t'] / 1000  # Convertir a segundos
+                timestamp_dt = datetime.utcfromtimestamp(timestamp)
+                if timestamp_dt > ultimo_timestamp:  # Validar si es más reciente que el último timestamp
+                    open_price = result['o']
+                    close_price = result['c']
+                    high_price = result['h']
+                    low_price = result['l']
+                    volume = result['v']
+
+                    batch.append((timestamp, pair, open_price, close_price, high_price, low_price, volume))
+                    
+                    query = f"""
+                    INSERT INTO {table_name} (timestamp, pair, open, close, high, low, volume)
+                    VALUES (to_timestamp(%s), %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (timestamp, pair) DO NOTHING
+                    """
+                    count += 1
+
+                    if count % self.batch_size == 0:
+                        cursor.executemany(query, batch)
+                        conn.commit()
+                        batch = []
+
+            if batch:
+                cursor.executemany(query, batch)
+                conn.commit()
+            logging.info(f"Datos insertados para {pair} en timeframe {timeframe} en la tabla {table_name}.")
+
+        except psycopg2.Error as e:
+            logging.error(f"Error al insertar datos para {pair}: {e}")
+            conn.rollback()
+        finally:
+            cursor.close()
+
+    def insertar_datos_realtime(self, conn, datos_realtime, pair, timeframe='3m'):
+        """Inserta los datos en tiempo real recibidos del WebSocket."""
+        cursor = conn.cursor()
+        table_name = f'forex_data_{timeframe}'
+        try:
+            for data in datos_realtime:
+                timestamp = data['t'] / 1000  # Convertir a segundos
+                open_price = data['o']
+                close_price = data['c']
+                high_price = data['h']
+                low_price = data['l']
+                volume = data['v']
+
                 query = f"""
                 INSERT INTO {table_name} (timestamp, pair, open, close, high, low, volume)
-                VALUES (to_timestamp(%s / 1000.0), %s, %s, %s, %s, %s, %s)
+                VALUES (to_timestamp(%s), %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (timestamp, pair) DO NOTHING
                 """
                 cursor.execute(query, (timestamp, pair, open_price, close_price, high_price, low_price, volume))
 
-                count += 1
-                if count % batch_size == 0:
-                    conn.commit()  # Hacer commit después de cada batch
+            conn.commit()
+            logging.info(f"Datos en tiempo real insertados para {pair} en timeframe {timeframe}.")
 
-            conn.commit()  # Último commit al final del procesamiento
-            logging.info(f"Datos insertados para {pair} en timeframe {timeframe} en la tabla {table_name}.")
-
-            # Verificar si el último timestamp insertado coincide con los datos más recientes
-            ultimo_timestamp = self.verificar_timestamp(conn, pair, timeframe)
-            logging.info(f"El último timestamp insertado para {pair} en {timeframe} es {ultimo_timestamp}")
-
-        except Exception as e:
-            logging.error(f"Error al insertar datos para {pair}: {e}")
-            conn.rollback()  # Hacer rollback en caso de error
+        except psycopg2.Error as e:
+            logging.error(f"Error al insertar datos en tiempo real para {pair}: {e}")
+            conn.rollback()
         finally:
             cursor.close()
 
@@ -113,18 +144,8 @@ class DatabaseManager:
             return
 
         cursor = conn.cursor()
-
-        # Determinar la tabla según el timeframe
-        if timeframe == '3m':
-            table_name = 'forex_data_3m'
-        elif timeframe == '15m':
-            table_name = 'forex_data_15m'
-        elif timeframe == '4h':
-            table_name = 'forex_data_4h'
-        else:
-            logging.error(f"Timeframe {timeframe} no reconocido para la eliminación de datos.")
-            return
-
+        table_name = f'forex_data_{timeframe}'
+        
         try:
             query = f"""
             DELETE FROM {table_name}
@@ -143,7 +164,6 @@ class DatabaseManager:
     def monitorear_insercion(self, conn, pair, timeframe):
         """Monitorea el tiempo de inserción y registros duplicados para identificar cuellos de botella."""
         try:
-            # Verificar el tiempo de inserción y posibles duplicados
             cursor = conn.cursor()
             table_name = f'forex_data_{timeframe}'
             query = f"SELECT COUNT(*), MAX(timestamp), MIN(timestamp) FROM {table_name} WHERE pair = %s"
@@ -153,14 +173,11 @@ class DatabaseManager:
 
             logging.info(f"Monitoreo de inserción para {pair} en timeframe {timeframe}: Total registros: {count}, Rango de timestamps: {min_timestamp} a {max_timestamp}")
 
-            # Si hay muchos registros duplicados o un retraso significativo en los timestamps, registrarlo
-            if count > 100000:  # Ajusta este valor según las expectativas
+            if count > 100000:
                 logging.warning(f"Posible cuello de botella en la inserción para {pair}. Hay más de 100,000 registros.")
             
-            # Monitorear si hay retrasos significativos en la inserción de datos
-            if (datetime.now(timezone.utc) - max_timestamp).total_seconds() > 180:  # Más de 3 minutos
+            if (datetime.now(timezone.utc) - max_timestamp).total_seconds() > 180:
                 logging.warning(f"Retraso significativo en la inserción de datos para {pair} en {timeframe}. Último timestamp: {max_timestamp}")
 
         except Exception as e:
             logging.error(f"Error al monitorear la inserción de datos: {e}")
-
